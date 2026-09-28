@@ -1,6 +1,6 @@
 # Rolvexa
 
-![Rolvexa splash screen](screenshots/splash-screen.png)
+<img src="screenshots/splash-screen.png" alt="Rolvexa splash screen" width="180" />
 
 **Your AI copilot for landing the job.** Rolvexa is an iOS app that reviews, builds, and tailors resumes and cover letters — entirely on-device, with no cloud AI and no network access at any point.
 
