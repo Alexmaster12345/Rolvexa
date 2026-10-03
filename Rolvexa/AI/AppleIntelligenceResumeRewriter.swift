@@ -113,10 +113,21 @@ actor AppleIntelligenceResumeRewriter {
 
     /// Every digit that appeared in the original must survive, in the same order — the model is
     /// explicitly told never to touch numbers, so any change here means it drifted from fact.
-    private func isSafeRewrite(original: String, rewritten: String) -> Bool {
+    ///
+    /// Internal rather than private so tests can exercise it directly. This is the gate that
+    /// actually protects the user's facts, and it's pure — testing it through the model would
+    /// make the guarantee only as reliable as the model's availability on the test machine.
+    func isSafeRewrite(original: String, rewritten: String) -> Bool {
         guard !rewritten.isEmpty, rewritten.count < original.count * 3 else { return false }
-        let originalDigits = original.filter(\.isNumber)
-        guard !originalDigits.isEmpty else { return true }
-        return rewritten.filter(\.isNumber).contains(originalDigits)
+        // Compared as whole numbers in order, not as a digit substring. Flattening to digits and
+        // asking whether the rewrite *contains* them accepted "3 sites" becoming "30 sites" —
+        // "4030" contains "403" — so a model could multiply a figure tenfold and pass the check.
+        // Requiring the exact sequence also rejects a number being invented or dropped.
+        return numbers(in: rewritten) == numbers(in: original)
+    }
+
+    /// Each run of digits as its own token: "40% over 3 months" → ["40", "3"].
+    private func numbers(in text: String) -> [String] {
+        text.split(whereSeparator: { !$0.isNumber }).map(String.init)
     }
 }
