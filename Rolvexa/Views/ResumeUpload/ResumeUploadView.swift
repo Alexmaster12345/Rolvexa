@@ -359,20 +359,70 @@ struct ResumeUploadView: View {
     /// own, so the finished resume ends up headed with a stranger's email. An address whose local
     /// part shares a word with the candidate's name is almost certainly theirs.
     private func bestEmail(in text: String, name: String) -> String? {
-        let emails = allMatches(pattern: #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#, in: text)
-        guard !emails.isEmpty else { return nil }
+        let pattern = #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#
+        let allEmails = allMatches(pattern: pattern, in: text)
+        guard !allEmails.isEmpty else { return nil }
+
+        // Addresses sitting under a "REFERENCE" heading belong to a referee, not the candidate.
+        // Name matching alone isn't enough to rule them out: OCR may not recover the candidate's
+        // own address at all, in which case the referee's would be the only match left and would
+        // silently become the header email.
+        let referenceEmails = Set(emailsUnderReferenceHeading(in: text, pattern: pattern))
+        let searchOrder = allEmails.filter { !referenceEmails.contains($0) }
+        // When a referee's is the *only* address on the page, the candidate's simply didn't
+        // survive OCR. Heading the resume with a stranger's address is worse than heading it
+        // with none, and the referee's stays where it belongs under the REFERENCE section.
+        guard !searchOrder.isEmpty else { return nil }
+
         let nameTokens = name.lowercased()
             .split(whereSeparator: { !$0.isLetter })
             .map(String.init)
             .filter { $0.count >= 3 }
         if !nameTokens.isEmpty {
-            let owned = emails.first { email in
+            let owned = searchOrder.first { email in
                 let localPart = email.split(separator: "@").first.map(String.init)?.lowercased() ?? ""
                 return nameTokens.contains { localPart.contains($0) }
             }
             if let owned { return owned }
         }
-        return emails.first
+        return searchOrder.first
+    }
+
+    /// Addresses appearing under a "REFERENCES"-style heading.
+    ///
+    /// The section is only closed by a *recognised* section heading (EXPERIENCE, EDUCATION, …),
+    /// never by any all-caps line. The referee's own name is typically set in capitals —
+    /// "ANGELA MOSS" — and treating that as a heading ended the section immediately, letting the
+    /// address on the very next line look like the candidate's own.
+    private func emailsUnderReferenceHeading(in text: String, pattern: String) -> [String] {
+        var collected: [String] = []
+        var insideReferenceSection = false
+        var linesSinceHeading = 0
+
+        for line in text.components(separatedBy: .newlines) {
+            let compact = line.uppercased().replacingOccurrences(of: " ", with: "")
+            if ResumeSectionKit.isSectionHeader(line) {
+                if compact.contains("REFERENCE") || compact.contains("REFEREE") {
+                    insideReferenceSection = true
+                    linesSinceHeading = 0
+                    continue
+                }
+                let isKnownSection = ResumeSectionKit.standardSectionKeywords.values
+                    .contains { keywords in keywords.contains(where: compact.contains) }
+                if isKnownSection { insideReferenceSection = false }
+                continue
+            }
+            guard insideReferenceSection else { continue }
+            // A referee block is a handful of lines; bounding it stops an unrecognised heading
+            // further down from swallowing the rest of the resume.
+            linesSinceHeading += 1
+            guard linesSinceHeading <= 8 else {
+                insideReferenceSection = false
+                continue
+            }
+            collected.append(contentsOf: allMatches(pattern: pattern, in: line))
+        }
+        return collected
     }
 
     private func extractEmail(from text: String) -> String? {
