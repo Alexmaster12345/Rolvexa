@@ -9,6 +9,7 @@ enum AppRoute: Hashable {
     case aiBuilding
     case resumeKit
     case reviewAndApply
+    case privacyAndTerms
 }
 
 @Observable

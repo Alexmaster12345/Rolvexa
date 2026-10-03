@@ -55,6 +55,8 @@ struct ContentView: View {
             ResumeKitView()
         case .reviewAndApply:
             ReviewAndApplyView()
+        case .privacyAndTerms:
+            PrivacyAndTermsView()
         }
     }
 }
