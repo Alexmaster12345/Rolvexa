@@ -1,8 +1,22 @@
 # Rolvexa
 
-<img src="screenshots/splash-screen.png" alt="Rolvexa splash screen" width="180" />
-
 **An offline resume parser, analyser and document generator for iOS.** Rolvexa reads a resume from a PDF, a Word file or a photo, scores it, compares it against a job posting, and regenerates it as a styled PDF or Word document — entirely on-device, with no cloud AI and no network access at any point.
+
+<p align="center">
+  <img src="screenshots/review-score.png" alt="Resume score with a four-axis breakdown and improvement suggestions" width="30%" />
+  <img src="screenshots/job-fit.png" alt="Job fit match against a pasted posting, showing matched and missing skills" width="30%" />
+  <img src="screenshots/resume-preview.png" alt="Live resume preview in the Modern Edge template" width="30%" />
+</p>
+
+<p align="center">
+  <em>Scoring with an explainable breakdown · job fit against a real posting · live template preview</em>
+</p>
+
+The download isn't a re-flowed approximation of that preview. Both are built from the same structured model and emit the same sections in the same order — contact icons, the circular headshot, education and skills in the coloured column — and a test asserts the parity across all four templates in both formats:
+
+<p align="center">
+  <img src="screenshots/exported-pdf.png" alt="The generated PDF: circular headshot, contact block with icons, education and skills in the coloured sidebar, structured job entries in the main column" width="62%" />
+</p>
 
 ### What's interesting under the hood
 

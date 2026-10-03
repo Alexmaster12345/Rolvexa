@@ -182,9 +182,33 @@ struct ResumeReviewView: View {
 }
 
 #Preview {
+    // Populated with a real breakdown and suggestions: with empty arrays this preview rendered
+    // an almost blank screen, which is no use for spotting layout problems.
     let state = AppState()
     state.uploadedFileName = "Jamie_Chen_Resume.pdf"
-    state.resumeReview = ResumeReview(overallScore: 78, breakdown: [], suggestions: [])
+    state.resumeReview = ResumeReview(
+        overallScore: 78,
+        breakdown: [
+            ResumeScoreBreakdown(title: "ATS Compatibility", percent: 92, icon: "checkmark.seal"),
+            ResumeScoreBreakdown(title: "Content & Impact", percent: 68, icon: "target"),
+            ResumeScoreBreakdown(title: "Grammar & Clarity", percent: 85, icon: "textformat.abc"),
+            ResumeScoreBreakdown(title: "Formatting", percent: 74, icon: "square.grid.2x2")
+        ],
+        suggestions: [
+            ImprovementSuggestion(
+                title: "Add quantifiable metrics to your last role",
+                detail: "Three bullets describe responsibilities without a number attached."
+            ),
+            ImprovementSuggestion(
+                title: "Replace passive phrasing",
+                detail: "\"Responsible for\" appears twice — lead with an action verb instead."
+            ),
+            ImprovementSuggestion(
+                title: "Two words are repeated close together",
+                detail: "\"managed\" appears in three consecutive bullets."
+            )
+        ]
+    )
     return NavigationStack {
         ResumeReviewView()
     }
