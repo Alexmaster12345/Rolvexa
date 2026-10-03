@@ -57,6 +57,12 @@ enum ResumeTextExtraction {
 
     // MARK: - Image (OCR)
 
+    /// The lines set in the largest type on the page, which on a resume is essentially always
+    /// the candidate's name. Position can't identify it: a two-column layout is read sidebar
+    /// first, so the name often lands well down the extracted text, behind whole sections.
+    /// Size is the signal a person actually uses.
+    static var lastProminentLines: [String] = []
+
     /// Reads a photo or screenshot of a resume. Unlike the PDF path there's no selectable-text
     /// shortcut to try first — OCR is the only option.
     static func extractFromImage(url: URL) -> String? {
@@ -75,6 +81,27 @@ enum ResumeTextExtraction {
         guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
         let upright = uprightImage(image, orientation: orientation(of: source)) ?? image
         return recognizeText(in: upright)
+    }
+
+    /// Of the observations, the ones whose glyph height is close to the tallest on the page.
+    /// Short, digit-free lines only, so a large section heading or a stray wide box doesn't
+    /// masquerade as the name.
+    private static func prominentLines(
+        from observations: [VNRecognizedTextObservation]
+    ) -> [String] {
+        let candidates = observations.compactMap { observation -> (String, CGFloat)? in
+            guard let text = observation.topCandidates(1).first?.string else { return nil }
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, trimmed.count <= 24,
+                  !trimmed.contains(where: \.isNumber),
+                  !trimmed.contains("@"),
+                  trimmed.split(separator: " ").count <= 3 else { return nil }
+            return (trimmed, observation.boundingBox.height)
+        }
+        guard let tallest = candidates.map(\.1).max(), tallest > 0 else { return [] }
+        // A name split across two lines ("ELLIOT" above "ALDERSON") is set at the same size, so
+        // a band rather than a single maximum is needed. Headings are markedly smaller.
+        return candidates.filter { $0.1 >= tallest * 0.82 }.map(\.0)
     }
 
     /// Bakes a photo's EXIF orientation into its pixels so the bitmap is visually upright.
@@ -180,7 +207,9 @@ enum ResumeTextExtraction {
             print("[ResumeTextExtraction] OCR failed: \(error)")
             return nil
         }
-        let lines = readingOrder(request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        let observations = request.results ?? []
+        lastProminentLines = prominentLines(from: observations)
+        let lines = readingOrder(observations).compactMap { $0.topCandidates(1).first?.string }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 

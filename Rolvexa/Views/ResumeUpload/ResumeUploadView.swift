@@ -352,6 +352,43 @@ struct ResumeUploadView: View {
         return String(text[matchRange])
     }
 
+    /// The candidate's name, preferring the largest text on the page over the first plausible
+    /// line.
+    ///
+    /// Position is not a reliable signal. A two-column resume is read sidebar first, so the name
+    /// can land dozens of lines into the extracted text — on a real example the first
+    /// name-shaped line was the heading "ABOUT ME", which then became the candidate's name and
+    /// broke every piece of de-duplication that keys off it. The name is, however, reliably set
+    /// in the biggest type on the page, which OCR reports as glyph height.
+    private func bestName(in text: String, filename: String, excludingLocation location: String?) -> String {
+        let prominent = ResumeTextExtraction.lastProminentLines
+        if !prominent.isEmpty {
+            let locationWords = Set(
+                (location ?? "")
+                    .split(whereSeparator: { !$0.isLetter })
+                    .map { String($0).lowercased() }
+            )
+            let nameParts = prominent.filter { candidate in
+                let words = candidate.split(whereSeparator: { !$0.isLetter }).map { String($0).lowercased() }
+                guard !words.isEmpty else { return false }
+                // A section heading can occasionally be set as large as the name; the standard
+                // ones are known, so they're excluded by name rather than by guesswork.
+                let compact = candidate.uppercased().replacingOccurrences(of: " ", with: "")
+                let isHeading = ResumeSectionKit.standardSectionKeywords.values
+                    .contains { keywords in keywords.contains(where: compact.contains) }
+                    || compact.contains("REFERENCE") || compact.contains("HOBB")
+                    || compact.contains("LANGUAGE") || compact.contains("CONTACT")
+                    || compact.contains("LINK")
+                return !isHeading && !words.contains { locationWords.contains($0) }
+            }
+            // A name split over two lines ("ELLIOT" above "ALDERSON") is joined back together.
+            if !nameParts.isEmpty {
+                return nameParts.prefix(3).joined(separator: " ")
+            }
+        }
+        return guessedName(fromText: text, filename: filename, excludingLocation: location)
+    }
+
     /// Picks the candidate's own address when a resume lists more than one.
     ///
     /// Taking the first match in reading order is wrong for the common "REFERENCE" block naming
@@ -388,41 +425,56 @@ struct ResumeUploadView: View {
         return searchOrder.first
     }
 
-    /// Addresses appearing under a "REFERENCES"-style heading.
+    /// The handful of lines making up a referee's details, following a "REFERENCE" heading.
     ///
-    /// The section is only closed by a *recognised* section heading (EXPERIENCE, EDUCATION, …),
-    /// never by any all-caps line. The referee's own name is typically set in capitals —
-    /// "ANGELA MOSS" — and treating that as a heading ended the section immediately, letting the
-    /// address on the very next line look like the candidate's own.
-    private func emailsUnderReferenceHeading(in text: String, pattern: String) -> [String] {
+    /// Bounded by a simple line count rather than by the next heading. Deciding where the block
+    /// ends by looking for a heading does not work on OCR'd text: a referee's name is set in
+    /// capitals ("ANGELA MOSS"), as are all-caps bullet items ("• CODING"), so almost every line
+    /// looks like a heading. An earlier attempt at this let the section run on for dozens of
+    /// lines and swallow the candidate's own email, which then came back as nil.
+    private func referenceBlockLines(in text: String) -> [String] {
+        let lines = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
         var collected: [String] = []
-        var insideReferenceSection = false
-        var linesSinceHeading = 0
-
-        for line in text.components(separatedBy: .newlines) {
+        for (index, line) in lines.enumerated() {
             let compact = line.uppercased().replacingOccurrences(of: " ", with: "")
-            if ResumeSectionKit.isSectionHeader(line) {
-                if compact.contains("REFERENCE") || compact.contains("REFEREE") {
-                    insideReferenceSection = true
-                    linesSinceHeading = 0
-                    continue
-                }
-                let isKnownSection = ResumeSectionKit.standardSectionKeywords.values
-                    .contains { keywords in keywords.contains(where: compact.contains) }
-                if isKnownSection { insideReferenceSection = false }
-                continue
-            }
-            guard insideReferenceSection else { continue }
-            // A referee block is a handful of lines; bounding it stops an unrecognised heading
-            // further down from swallowing the rest of the resume.
-            linesSinceHeading += 1
-            guard linesSinceHeading <= 8 else {
-                insideReferenceSection = false
-                continue
-            }
-            collected.append(contentsOf: allMatches(pattern: pattern, in: line))
+            guard ResumeSectionKit.isSectionHeader(line),
+                  compact.contains("REFERENCE") || compact.contains("REFEREE") else { continue }
+            // Name, employer, phone, email — four lines covers the usual block, five for slack.
+            let end = min(index + 5, lines.count - 1)
+            if index < end { collected.append(contentsOf: lines[(index + 1)...end]) }
         }
         return collected
+    }
+
+    private func emailsUnderReferenceHeading(in text: String, pattern: String) -> [String] {
+        referenceBlockLines(in: text).flatMap { allMatches(pattern: pattern, in: $0) }
+    }
+
+    /// The candidate's own phone, skipping any number inside a referee's block. Without this the
+    /// resume is headed with the referee's number, since theirs is often read first.
+    private func bestPhone(in text: String) -> String? {
+        let referenceLines = referenceBlockLines(in: text)
+        func isReferenceNumber(_ candidate: String) -> Bool {
+            referenceLines.contains { $0.contains(candidate) }
+        }
+
+        let strictPattern = #"(\+?\d{1,2}[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}"#
+        if let own = allMatches(pattern: strictPattern, in: text).first(where: { !isReferenceNumber($0) }) {
+            return own
+        }
+
+        // OCR regularly drops or merges a digit — a real resume came back as "+1-202-55-0178"
+        // rather than "+1-202-555-0178" — which the strict pattern can't match, leaving only the
+        // referee's correctly-read number as a candidate. A looser sweep accepts any run of
+        // phone-ish characters, then qualifies it on digit count: 9 is above anything a date or
+        // a year reaches ("Jan 2015 - Dec 2019" is only 8) and at or below a real number.
+        let loosePattern = #"\+?\d[\d\s().\-]{7,18}\d"#
+        return allMatches(pattern: loosePattern, in: text).first { candidate in
+            let digits = candidate.filter(\.isNumber).count
+            return digits >= 9 && digits <= 15 && !isReferenceNumber(candidate)
+        }?.trimmingCharacters(in: .whitespaces)
     }
 
     private func extractEmail(from text: String) -> String? {
@@ -532,6 +584,41 @@ struct ResumeUploadView: View {
         return "This DOCX file's contents couldn't be read — please try a PDF instead."
     }
 
+    /// TEMPORARY DIAGNOSTIC — remove once the upload parsing is confirmed on real resumes.
+    ///
+    /// Dumps the raw OCR text and every field parsed out of it to the app's Documents folder so
+    /// it can be pulled off the device with `devicectl device copy from`. Reproducing a
+    /// photographed resume's exact OCR output from a synthetic test image has proved unreliable,
+    /// and the remaining parsing bugs depend on exactly what Vision reads.
+    private func writeDiagnosticDump(rawOCR: String) {
+        let dump = """
+        ===== RAW OCR TEXT =====
+        \(rawOCR)
+
+        ===== PARSED FIELDS =====
+        fullName   : \(appState.experience.fullName)
+        currentRole: \(appState.experience.currentRole)
+        email      : \(appState.extractedEmail ?? "nil")
+        phone      : \(appState.extractedPhone ?? "nil")
+        location   : \(appState.extractedLocation ?? "nil")
+        summary    : \(appState.extractedSummary ?? "nil")
+        company    : \(appState.extractedCompany ?? "nil")
+        links      : \(appState.extractedLinks)
+        education  : \(appState.extractedEducation ?? "nil")
+        skills     : \(appState.experience.skills)
+
+        ===== BODY AFTER HEADER STRIP =====
+        \(appState.extractedResumeDisplayText ?? "nil")
+
+        ===== FINAL EXPORT TEXT =====
+        \(appState.resumeExportText())
+        """
+        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let url = directory.appendingPathComponent("rolvexa-diagnostic.txt")
+        try? dump.write(to: url, atomically: true, encoding: .utf8)
+        print("[Diagnostic] wrote \(dump.count) bytes to \(url.path)")
+    }
+
     private func buildReview(from text: String?, fileExtension: String) async -> ResumeReview {
         guard let text else {
             return ResumeReview(
@@ -598,16 +685,18 @@ struct ResumeUploadView: View {
                         appState.experience.currentRole = lines[titleIndex]
                     }
                     appState.extractedEmail = pipeContact.email ?? bestEmail(in: extractedText, name: appState.experience.fullName)
-                    appState.extractedPhone = pipeContact.phone ?? extractPhone(from: extractedText)
+                    appState.extractedPhone = pipeContact.phone ?? bestPhone(in: extractedText)
                     appState.extractedLocation = pipeContact.location ?? extractLocation(from: extractedText)
 
                     let summaryResult = extractSummary(afterContactLineIndex: pipeContact.lineIndex, in: lines)
                     appState.extractedSummary = summaryResult?.text
                 } else {
                     let location = extractLocation(from: extractedText)
-                    appState.experience.fullName = guessedName(fromText: extractedText, filename: selectedFileName, excludingLocation: location)
+                    appState.experience.fullName = bestName(
+                        in: extractedText, filename: selectedFileName, excludingLocation: location
+                    )
                     appState.extractedEmail = bestEmail(in: extractedText, name: appState.experience.fullName)
-                    appState.extractedPhone = extractPhone(from: extractedText)
+                    appState.extractedPhone = bestPhone(in: extractedText)
                     appState.extractedLocation = location
                 }
 
@@ -643,6 +732,7 @@ struct ResumeUploadView: View {
                     appState.experience.currentRole = title
                 }
                 appState.extractedCompany = recentPosition.company
+                writeDiagnosticDump(rawOCR: extractedText)
             } else {
                 appState.experience.fullName = guessedName(fromText: nil, filename: selectedFileName, excludingLocation: nil)
             }
