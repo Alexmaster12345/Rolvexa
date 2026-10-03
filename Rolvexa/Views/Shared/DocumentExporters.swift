@@ -85,8 +85,20 @@ enum PDFDocumentRenderer {
 
     private static func centeredParagraphStyle() -> CTParagraphStyle {
         var alignment = CTTextAlignment.center
-        let settings = [CTParagraphStyleSetting(spec: .alignment, valueSize: MemoryLayout<CTTextAlignment>.size, value: &alignment)]
-        return CTParagraphStyleCreate(settings, settings.count)
+        // `&alignment` inline in the array literal would only be valid for the duration of that
+        // expression — the pointer stored in `settings` could already dangle by the time
+        // CTParagraphStyleCreate reads it. Holding the pointer open across the call makes the
+        // lifetime explicit instead of relying on stack layout happening to keep it alive.
+        return withUnsafeMutablePointer(to: &alignment) { alignmentPointer in
+            let settings = [
+                CTParagraphStyleSetting(
+                    spec: .alignment,
+                    valueSize: MemoryLayout<CTTextAlignment>.size,
+                    value: alignmentPointer
+                )
+            ]
+            return CTParagraphStyleCreate(settings, settings.count)
+        }
     }
 
     /// - Parameter style: the selected `ResumeTemplateStyle` — drives which structural layout is

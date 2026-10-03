@@ -37,18 +37,49 @@ enum ResumeAnalysisEngine {
 
     // MARK: - Spelling (the on-device system spell checker; no network, no model)
 
-    /// A capitalized word that isn't the first word of its line is almost always a proper noun —
-    /// a person's name, a company, a product, an acronym — not a real spelling error. The system
-    /// checker has no way to know that an unrecognized capitalized word is someone's actual name
-    /// rather than a typo, and swapping in its closest dictionary guess is exactly the kind of silent corruption this
-    /// needs to guard against (a resume is the one place a name must never be "autocorrected").
-    /// Lowercase words are unambiguous — those are genuine flagged the same as always.
-    private static func isLikelyProperNoun(_ word: String, at location: Int, in text: NSString) -> Bool {
-        guard let first = word.first, first.isUppercase else { return false }
-        // Find the start of the line this word is on, and check whether the word sits at that
-        // very start (where capitalization is expected regardless of whether it's a proper noun).
-        let lineRange = text.lineRange(for: NSRange(location: location, length: 0))
-        return location > lineRange.location
+    /// A capitalized word the system dictionary doesn't recognize is, on a resume, almost always
+    /// a proper noun — a person's name, a company, a tool, an acronym — not a typo. Resumes are
+    /// unusually dense with these ("Figma", "PostgreSQL", "Kubernetes", "Jira", a surname), and
+    /// the checker confidently offers a wrong "correction" for each one.
+    ///
+    /// Every capitalized word is skipped, including line-initial ones. An earlier version only
+    /// skipped words that weren't first on their line — reasoning that sentence-initial capitals
+    /// are grammatical rather than name-signalling — but that left a SKILLS line reading
+    /// "Figma, User Research" flagged as a misspelling, which both produced a nonsense suggestion
+    /// and silently docked 4 points off the score. Missing the rarer capitalized prose typo is a
+    /// much smaller cost than mis-flagging every tool a candidate lists.
+    private static func isLikelyProperNoun(_ word: String) -> Bool {
+        word.first?.isUppercase == true
+    }
+
+    /// Whether the misspelled range sits inside an email address, URL, or number-bearing token
+    /// (a phone number, a date range, a version string). The system checker has no concept of
+    /// these — it sees "jane@example.com" and reports "example" or the whole local part as
+    /// misspelled, which surfaces as the nonsense suggestion "Fix possible spelling issues —
+    /// Flagged: jane@example.com". Resumes are full of such tokens in the contact header, so
+    /// they're excluded from spell results entirely rather than flagged and never fixable.
+    private static func isInsideNonProseToken(_ misspelledRange: NSRange, in text: NSString) -> Bool {
+        // Expand to the surrounding run of non-whitespace characters, i.e. the whole "word" a
+        // human would see, rather than the sub-fragment the checker happened to flag.
+        var start = misspelledRange.location
+        var end = misspelledRange.location + misspelledRange.length
+        let whitespace = CharacterSet.whitespacesAndNewlines
+        while start > 0,
+              let scalar = Unicode.Scalar(text.character(at: start - 1)),
+              !whitespace.contains(scalar) {
+            start -= 1
+        }
+        while end < text.length,
+              let scalar = Unicode.Scalar(text.character(at: end)),
+              !whitespace.contains(scalar) {
+            end += 1
+        }
+        let token = text.substring(with: NSRange(location: start, length: end - start))
+        if token.contains("@") || token.contains("://") || token.contains("www.") {
+            return true
+        }
+        // Tokens carrying digits are identifiers, not prose: "4155550100", "2018-2021", "v2.1".
+        return token.contains(where: \.isNumber)
     }
 
     static func spellingIssues(in text: String) -> [(word: String, suggestion: String?)] {
@@ -65,7 +96,8 @@ enum ResumeAnalysisEngine {
             guard misspelledRange.location != NSNotFound else { break }
             let word = nsText.substring(with: misspelledRange)
             searchLocation = misspelledRange.location + max(misspelledRange.length, 1)
-            guard !isLikelyProperNoun(word, at: misspelledRange.location, in: nsText) else { continue }
+            guard !isLikelyProperNoun(word) else { continue }
+            guard !isInsideNonProseToken(misspelledRange, in: nsText) else { continue }
             let suggestion = checker.guesses(forWordRange: misspelledRange, in: text, language: "en")?.first
             results.append((word, suggestion))
         }
@@ -82,7 +114,8 @@ enum ResumeAnalysisEngine {
             guard misspelledRange.location != NSNotFound else { break }
             let word = nsText.substring(with: misspelledRange)
             searchLocation = misspelledRange.location + max(misspelledRange.length, 1)
-            guard !isLikelyProperNoun(word, at: misspelledRange.location, in: nsText) else { continue }
+            guard !isLikelyProperNoun(word) else { continue }
+            guard !isInsideNonProseToken(misspelledRange, in: nsText) else { continue }
             let suggestion = checker.guesses(forWordRange: misspelledRange, in: text, language: nil, inSpellDocumentWithTag: 0)?.first
             results.append((word, suggestion))
         }
@@ -220,15 +253,12 @@ enum ResumeAnalysisEngine {
 
         for (word, suggestion) in spellingIssues(in: resumeText) {
             guard let suggestion, suggestion.lowercased() != word.lowercased() else { continue }
-            // Never silently rewrite a capitalized word, even one the checker is confident about.
-            // `isLikelyProperNoun` (used when *flagging*) deliberately allows line-initial
-            // capitals through, since a sentence's first word is capitalized by grammar rather
-            // than because it's a name — but that leaves real proper nouns that happen to start
-            // a line unprotected, and the checker will happily "correct" them: a SKILLS line
-            // reading "Figma, User Research" became "Sigma, User Research". On a resume,
-            // corrupting a tool name or a surname is far worse than leaving a capitalized typo
-            // in place, and the user still sees it listed under suggestions either way.
-            guard word.first?.isUppercase != true else { continue }
+            // Belt-and-braces: `spellingIssues` already filters capitalized words out via
+            // `isLikelyProperNoun`, so nothing capitalized should reach here. Re-checking keeps
+            // the "never silently rewrite a name" guarantee local to the code that does the
+            // rewriting, so loosening the flagging filter later can't silently reintroduce
+            // "Figma" → "Sigma" style corruption.
+            guard !isLikelyProperNoun(word) else { continue }
             improved = replaceWholeWord(word, with: suggestion, in: improved)
         }
 

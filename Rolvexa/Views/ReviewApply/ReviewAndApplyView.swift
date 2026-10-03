@@ -8,6 +8,7 @@ struct ReviewAndApplyView: View {
     @State private var isSubmitting = false
     @State private var didSubmit = false
     @State private var fixErrorMessage: String?
+    @State private var fixSuccessMessage: String?
     @State private var fixProgress: Double = 0
 
     var body: some View {
@@ -210,6 +211,18 @@ struct ReviewAndApplyView: View {
                 }
             }
 
+            // A fix can genuinely rewrite the text without moving the coarse heuristic score (the
+            // score only counts things like missing metrics or weak-opener phrases, so tighter
+            // wording at the same structure scores identically). Without this, the user taps the
+            // button, waits through the overlay, and nothing whatsoever appears to change —
+            // indistinguishable from a silent no-op.
+            if let fixSuccessMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text(fixSuccessMessage).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             if canAutoFix {
                 if appState.keepOriginalUploadedLayout {
                     Text("Using this replaces your kept original file with a regenerated version for downloads — your original design won't be available anymore.")
@@ -243,9 +256,10 @@ struct ReviewAndApplyView: View {
 
         appState.isImprovingResume = true
         fixProgress = 0
-        // A simple animated approximation — the actual fix duration varies (longer if the
-        // bundled on-device model is available and engages), so this eases toward 90% and only
-        // jumps to 100% once the real work below has actually finished.
+        fixSuccessMessage = nil
+        // A simple animated approximation — the actual fix duration varies (longer when Apple
+        // Intelligence is available and engages), so this eases toward 90% and only jumps to
+        // 100% once the real work below has actually finished.
         let progressTask = Task {
             while !Task.isCancelled, fixProgress < 0.9 {
                 try? await Task.sleep(for: .milliseconds(400))
@@ -267,6 +281,17 @@ struct ReviewAndApplyView: View {
         // the overlay under the alert before it's had any chance to actually be seen, especially
         // when the fix resolves in only a few milliseconds.
         var pendingErrorMessage: String?
+        var pendingSuccessMessage: String?
+
+        /// Built once the new score is known. Phrased differently when the score didn't move,
+        /// because "we rewrote your text but the number is identical" is otherwise indistinguishable
+        /// from "nothing happened" — the score only rewards structural things (metrics, sections,
+        /// bullets), so tighter wording at the same structure legitimately scores the same.
+        func successMessage(newScore: Int) -> String {
+            newScore > kit.jobFitScore
+                ? "Your wording was tightened and your score went from \(kit.jobFitScore)% to \(newScore)%."
+                : "Your wording was tightened. The score stayed at \(newScore)% — what's left needs detail only you can add."
+        }
 
         do {
             if appState.buildSource == .upload, let resumeText = appState.extractedResumeText, !resumeText.isEmpty {
@@ -278,6 +303,7 @@ struct ReviewAndApplyView: View {
                     jobFitScore: improved.qualityScore,
                     suggestions: improved.suggestions.map { ImprovementSuggestion(title: $0.title, detail: $0.detail) }
                 )
+                pendingSuccessMessage = successMessage(newScore: improved.qualityScore)
             } else {
                 // For "write from scratch", the only free-form prose field is the work history
                 // summary — name/role/skills are structured, not something to "rewrite". Improve
@@ -306,6 +332,7 @@ struct ReviewAndApplyView: View {
                     jobFitScore: rescored.qualityScore,
                     suggestions: rescored.suggestions.map { ImprovementSuggestion(title: $0.title, detail: $0.detail) }
                 )
+                pendingSuccessMessage = successMessage(newScore: rescored.qualityScore)
             }
             appState.aiReviewedThisSession = true
         } catch ResumeAnalysisError.noImprovement {
@@ -321,6 +348,7 @@ struct ReviewAndApplyView: View {
         // ever renders a visible frame of it. This guarantees it's actually seen.
         try? await Task.sleep(for: .milliseconds(700))
         fixErrorMessage = pendingErrorMessage
+        fixSuccessMessage = pendingSuccessMessage
     }
 
     private func tag(_ text: String) -> some View {
