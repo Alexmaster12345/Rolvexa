@@ -154,7 +154,7 @@ struct AIBuildingView: View {
         do {
             let review = try await ResumeAnalysisEngine.reviewGrammar(resumeText: text)
             appState.applicationKit = ApplicationKit(
-                jobFitScore: review.qualityScore,
+                resumeScore: review.qualityScore,
                 suggestions: review.suggestions.map { ImprovementSuggestion(title: $0.title, detail: $0.detail) }
             )
             appState.aiReviewedThisSession = true
@@ -189,12 +189,12 @@ struct AIBuildingView: View {
     private func applyFallbackApplicationKit() {
         if appState.buildSource == .upload, let review = appState.resumeReview {
             appState.applicationKit = ApplicationKit(
-                jobFitScore: review.overallScore,
+                resumeScore: review.overallScore,
                 suggestions: review.suggestions
             )
         } else {
             appState.applicationKit = ApplicationKit(
-                jobFitScore: 87,
+                resumeScore: 87,
                 suggestions: [
                     ImprovementSuggestion(title: "Add quantifiable metrics to your last role", detail: "")
                 ]

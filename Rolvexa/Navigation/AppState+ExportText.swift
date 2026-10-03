@@ -211,15 +211,61 @@ extension AppState {
         """
     }
 
+    /// The exported report. Leads with the job-fit comparison when there's a posting to compare
+    /// against, and is explicit that there isn't one when there isn't — the previous version
+    /// printed "Job Fit Score" over the resume quality score either way.
     func jobFitExportText() -> String {
-        guard let kit = applicationKit else { return "No job fit analysis available yet." }
-        var lines = ["Job Fit Score: \(kit.jobFitScore)%", "", "Suggestions:"]
-        for suggestion in kit.suggestions {
-            lines.append("- \(suggestion.title)")
-            if !suggestion.detail.isEmpty {
-                lines.append("  \(suggestion.detail)")
+        var lines: [String] = []
+
+        if let fit = jobFitAnalysis {
+            lines.append("JOB FIT ANALYSIS")
+            if !jobTarget.title.isEmpty || !jobTarget.company.isEmpty {
+                lines.append([jobTarget.title, jobTarget.company].filter { !$0.isEmpty }.joined(separator: " — "))
+            }
+            lines.append("")
+            lines.append("Overall match: \(fit.overallScore)% (\(fit.summaryLabel))")
+            lines.append("")
+            lines.append("Breakdown:")
+            for component in fit.components {
+                lines.append("- \(component.title): \(component.percent)% — \(component.detail)")
+            }
+            if !fit.matchedSkills.isEmpty {
+                lines.append("")
+                lines.append("Skills you already cover:")
+                lines.append(contentsOf: fit.matchedSkills.map { "  ✓ \($0)" })
+            }
+            if !fit.missingSkills.isEmpty {
+                lines.append("")
+                lines.append("Skills the posting asks for that your resume doesn't show:")
+                lines.append(contentsOf: fit.missingSkills.map { "  • \($0)" })
+            }
+            if !fit.missingKeywords.isEmpty {
+                lines.append("")
+                lines.append("Other terms from the posting worth working in:")
+                lines.append("  " + fit.missingKeywords.joined(separator: ", "))
+            }
+        } else {
+            lines.append("RESUME REPORT")
+            lines.append("")
+            lines.append("No job description was provided, so this is a review of the resume on")
+            lines.append("its own — not a match against any particular role.")
+        }
+
+        if let kit = applicationKit {
+            lines.append("")
+            lines.append("Resume score: \(kit.resumeScore)% (writing quality, structure and completeness)")
+            if !kit.suggestions.isEmpty {
+                lines.append("")
+                lines.append("Suggestions:")
+                for suggestion in kit.suggestions {
+                    lines.append("- \(suggestion.title)")
+                    if !suggestion.detail.isEmpty {
+                        lines.append("  \(suggestion.detail)")
+                    }
+                }
             }
         }
+
         return lines.joined(separator: "\n")
     }
 }

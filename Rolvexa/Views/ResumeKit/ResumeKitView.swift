@@ -6,6 +6,7 @@ struct ResumeKitView: View {
 
     private enum Tab: String, CaseIterable { case resume = "Resume", coverLetter = "Cover Letter", insights = "Insights" }
     @State private var tab: Tab = .resume
+    @State private var isEditingJobDescription = false
 
     var body: some View {
         ScrollView {
@@ -74,6 +75,9 @@ struct ResumeKitView: View {
             }
             .padding(20)
         }
+        .sheet(isPresented: $isEditingJobDescription) {
+            JobDescriptionSheet()
+        }
     }
 
     private var downloadButton: some View {
@@ -121,27 +125,107 @@ struct ResumeKitView: View {
         .tint(.indigo)
     }
 
+    /// Shows a real job-fit breakdown when a job description has been pasted, and the resume's
+    /// own quality score — under its own name — when it hasn't.
+    ///
+    /// This card used to print "JOB FIT SCORE / Strong match" over the resume quality score, so
+    /// it reported a match against a job the app had never seen.
     private func jobFitCard(_ kit: ApplicationKit) -> some View {
-        HStack(spacing: 20) {
-            ZStack {
-                Circle().stroke(Color.indigo.opacity(0.15), lineWidth: 10)
-                Circle()
-                    .trim(from: 0, to: Double(kit.jobFitScore) / 100)
-                    .stroke(Color.indigo, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Text("\(kit.jobFitScore)%").font(.title3.bold())
-            }
-            .frame(width: 84, height: 84)
+        VStack(alignment: .leading, spacing: 14) {
+            if let fit = appState.jobFitAnalysis {
+                scoreHeader(
+                    percent: fit.overallScore,
+                    caption: "JOB FIT",
+                    headline: fit.summaryLabel,
+                    detail: "Measured against the job description you pasted"
+                )
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("JOB FIT SCORE").font(.caption.bold()).foregroundStyle(.secondary)
-                Text("Strong match").font(.subheadline.bold())
-                Text("\(kit.suggestions.count) quick improvements suggested")
-                    .font(.caption).foregroundStyle(.secondary)
+                VStack(spacing: 6) {
+                    ForEach(fit.components) { component in
+                        HStack {
+                            Text(component.title).font(.caption.bold())
+                            Spacer()
+                            Text(component.detail)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.trailing)
+                            Text("\(component.percent)%")
+                                .font(.caption.bold().monospacedDigit())
+                                .foregroundStyle(Color.indigo)
+                                .frame(width: 44, alignment: .trailing)
+                        }
+                    }
+                }
+
+                if !fit.missingSkills.isEmpty {
+                    skillChips(title: "Missing", items: fit.missingSkills, tint: .red)
+                }
+                if !fit.matchedSkills.isEmpty {
+                    skillChips(title: "Matched", items: fit.matchedSkills, tint: .green)
+                }
+
+                Button("Edit job description") { isEditingJobDescription = true }
+                    .font(.caption.bold())
+                    .buttonStyle(.borderless)
+                    .tint(.indigo)
+            } else {
+                scoreHeader(
+                    percent: kit.resumeScore,
+                    caption: "RESUME SCORE",
+                    headline: kit.suggestions.count == 1
+                        ? "1 quick improvement suggested"
+                        : "\(kit.suggestions.count) quick improvements suggested",
+                    detail: "How well-written your resume is — not a match against any job yet"
+                )
+
+                Button {
+                    isEditingJobDescription = true
+                } label: {
+                    Label("Add job description to see your match", systemImage: "text.badge.plus")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.bordered)
+                .tint(.indigo)
             }
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 16).fill(Color.indigo.opacity(0.06)))
+    }
+
+    private func scoreHeader(percent: Int, caption: String, headline: String, detail: String) -> some View {
+        HStack(spacing: 20) {
+            ZStack {
+                Circle().stroke(Color.indigo.opacity(0.15), lineWidth: 10)
+                Circle()
+                    .trim(from: 0, to: Double(percent) / 100)
+                    .stroke(Color.indigo, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(percent)%").font(.title3.bold())
+            }
+            .frame(width: 84, height: 84)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(caption).font(.caption.bold()).foregroundStyle(.secondary)
+                Text(headline).font(.subheadline.bold())
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func skillChips(title: String, items: [String], tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased()).font(.caption2.bold()).foregroundStyle(.secondary)
+            FlowLayout(spacing: 6) {
+                ForEach(items.prefix(12), id: \.self) { item in
+                    Text(item)
+                        .font(.caption2)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(tint.opacity(0.14)))
+                        .foregroundStyle(tint)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -368,9 +452,45 @@ struct ResumeKitView: View {
     }
 }
 
-#Preview {
+#Preview("Kit — no job description") {
     let state = AppState()
-    state.applicationKit = ApplicationKit(jobFitScore: 87, suggestions: [])
+    state.applicationKit = ApplicationKit(resumeScore: 87, suggestions: [
+        ImprovementSuggestion(title: "Add quantifiable metrics to your last role", detail: "")
+    ])
+    return NavigationStack {
+        ResumeKitView()
+    }
+    .environment(AppRouter())
+    .environment(state)
+}
+
+#Preview("Kit — with job description") {
+    let state = AppState()
+    state.buildSource = .write
+    state.experience.fullName = "Elliot Alderson"
+    state.experience.currentRole = "Senior Infrastructure Engineer"
+    state.experience.skills = ["Python", "Linux", "Kubernetes", "Docker", "AWS", "CI/CD"]
+    var job = WorkExperienceEntry()
+    job.title = "Senior Infrastructure Engineer"
+    job.company = "Allsafe"
+    job.startDate = "2019"
+    job.isCurrent = true
+    job.bullets = ["Ran containerised services on Kubernetes across three AWS regions",
+                   "Automated deployments with CI/CD and Docker, improving platform reliability"]
+    state.experience.positions = [job]
+    var school = EducationEntry()
+    school.degree = "BSc Computer Science"
+    school.school = "New York University"
+    state.experience.educationEntries = [school]
+    state.jobTarget.title = "Senior SRE"
+    state.jobTarget.company = "Northwind Labs"
+    state.jobTarget.descriptionText = """
+    Senior Site Reliability Engineer — Northwind Labs
+    You will run services on Kubernetes, manage infrastructure with Terraform, and automate
+    deployments through CI/CD pipelines on AWS. Python and Linux required. Docker essential.
+    Reliability and compliance are central to this platform. Bachelor degree preferred.
+    """
+    state.applicationKit = ApplicationKit(resumeScore: 88, suggestions: [])
     return NavigationStack {
         ResumeKitView()
     }

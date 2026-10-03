@@ -20,7 +20,7 @@ struct InputExperienceView: View {
     /// ``orderedFields`` rebuilds it from the current entries instead.
     private enum Field: Hashable {
         case fullName, currentRole, email, phone, location, linkedIn, portfolio
-        case targetTitle, targetCompany, newSkill, summary
+        case targetTitle, targetCompany, jobDescription, newSkill, summary
         case positionTitle(UUID), positionCompany(UUID), positionLocation(UUID)
         case positionStart(UUID), positionEnd(UUID), positionBullet(UUID, Int)
         case educationDegree(UUID), educationSchool(UUID), educationLocation(UUID), educationDate(UUID)
@@ -30,7 +30,7 @@ struct InputExperienceView: View {
     private var orderedFields: [Field] {
         var fields: [Field] = [
             .fullName, .currentRole, .email, .phone, .location,
-            .linkedIn, .portfolio, .targetTitle, .targetCompany, .newSkill, .summary
+            .linkedIn, .portfolio, .targetTitle, .targetCompany, .jobDescription, .newSkill, .summary
         ]
         for position in appState.experience.positions {
             fields.append(contentsOf: [
@@ -315,6 +315,16 @@ struct InputExperienceView: View {
                     .textFieldStyle(.roundedInput)
                     .focused($focusedField, equals: .targetCompany)
                     .id(Field.targetCompany)
+
+                Text("Paste the job posting to get a match score and see which required skills you're missing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $appState.jobTarget.descriptionText)
+                    .frame(height: 110)
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.appCardBackground))
+                    .focused($focusedField, equals: .jobDescription)
+                    .id(Field.jobDescription)
             }
         }
         .id(Field.targetTitle)

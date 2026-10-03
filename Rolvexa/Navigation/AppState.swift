@@ -35,6 +35,18 @@ final class AppState {
 
     var applicationKit: ApplicationKit?
 
+    /// How the resume measures up against the pasted job description, or nil when none was
+    /// given. Computed on demand rather than cached: it's pure string work, and a stale match
+    /// percentage surviving an edit to either the resume or the posting would be worse than
+    /// recomputing it.
+    var jobFitAnalysis: JobFitAnalysis? {
+        JobFitAnalyzer.analyze(
+            jobDescription: jobTarget.descriptionText,
+            resumeText: resumeExportText(),
+            resumeSkills: experience.skills
+        )
+    }
+
     /// Set only when the on-device AI agent (ResumeIntelligenceAgent) successfully generated
     /// real, tailored copy. Nil means "fall back to the deterministic template" — either the
     /// agent isn't available on this device, or the call failed.

@@ -183,8 +183,42 @@ struct ResumeReview {
 }
 
 struct ApplicationKit {
-    var jobFitScore: Int
+    /// How well-written the resume is — spelling, structure, metrics, phrasing. Deliberately
+    /// *not* named "job fit": it is computed without any knowledge of a job, and presenting it
+    /// as a match percentage claimed something the app had never measured.
+    var resumeScore: Int
     var suggestions: [ImprovementSuggestion]
+}
+
+/// One scored dimension of a job-fit comparison, with the counts behind it so the UI can show
+/// why the number is what it is instead of asking the user to trust it.
+struct JobFitComponent: Identifiable {
+    let id = UUID()
+    var title: String
+    var percent: Int
+    var detail: String
+}
+
+/// The result of comparing a resume against a specific job description.
+///
+/// Only ever produced when there *is* a job description — `AppState.jobFitAnalysis` is nil
+/// otherwise, and the UI falls back to showing the resume score under its own name.
+struct JobFitAnalysis {
+    var overallScore: Int
+    var components: [JobFitComponent]
+    var matchedSkills: [String]
+    var missingSkills: [String]
+    var matchedKeywords: [String]
+    var missingKeywords: [String]
+
+    var summaryLabel: String {
+        switch overallScore {
+        case 85...: return "Strong match"
+        case 70..<85: return "Good match"
+        case 50..<70: return "Partial match"
+        default: return "Weak match"
+        }
+    }
 }
 
 enum BuildSource {

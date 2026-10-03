@@ -386,12 +386,35 @@ enum ResumeSectionKit {
         tagger.enumerateTags(in: range, unit: .word, scheme: .lexicalClass, options: [.omitPunctuation, .omitWhitespace, .omitOther]) { tag, tokenRange in
             if tag == .noun || tag == .adjective {
                 let word = text[tokenRange].lowercased()
-                if word.count > 2, !keywordStopwords.contains(word), word.rangeOfCharacter(from: .decimalDigits) == nil {
+                if isUsableKeyword(word) {
                     frequencies[word, default: 0] += 1
                 }
             }
             return true
         }
-        return frequencies.sorted { $0.value > $1.value }.prefix(limit).map(\.key)
+
+        // The part-of-speech model isn't guaranteed to be present: where it isn't, every token
+        // comes back tagged `.otherWord` and this returned an empty list on every input —
+        // silently disabling keyword extraction rather than degrading it. Fall back to plain
+        // frequency over stopword-filtered tokens, which needs no model.
+        if frequencies.isEmpty {
+            for token in text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
+            where isUsableKeyword(token) {
+                frequencies[token, default: 0] += 1
+            }
+        }
+
+        // Sort by frequency, then alphabetically — dictionary order is not stable between runs,
+        // so without the tiebreak the same text could yield a different list each call.
+        return frequencies
+            .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .prefix(limit)
+            .map(\.key)
+    }
+
+    private static func isUsableKeyword(_ word: String) -> Bool {
+        word.count > 3
+            && !keywordStopwords.contains(word)
+            && word.rangeOfCharacter(from: .decimalDigits) == nil
     }
 }

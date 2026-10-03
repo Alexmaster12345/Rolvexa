@@ -28,7 +28,7 @@ struct ReviewAndApplyView: View {
                     jobFitTitlesCard
                 }
 
-                if let kit = appState.applicationKit, kit.jobFitScore < 100, !kit.suggestions.isEmpty {
+                if let kit = appState.applicationKit, kit.resumeScore < 100, !kit.suggestions.isEmpty {
                     improveScoreCard(kit)
                 }
 
@@ -51,7 +51,7 @@ struct ReviewAndApplyView: View {
                     includesPhoto: true
                 )
                 kitRow(icon: "envelope.fill", title: "Cover Letter", subtitle: "Tailored & ready", baseFilename: "CoverLetter", documentTitle: "Cover Letter", exportText: appState.coverLetterExportText, format: nil)
-                kitRow(icon: "chart.bar.fill", title: "Job Fit Analysis", subtitle: "\(appState.applicationKit?.jobFitScore ?? 0)% match", baseFilename: "JobFitAnalysis", documentTitle: "Job Fit Analysis", exportText: appState.jobFitExportText, format: nil)
+                kitRow(icon: "chart.bar.fill", title: jobFitRowTitle, subtitle: jobFitRowSubtitle, baseFilename: "JobFitAnalysis", documentTitle: jobFitRowTitle, exportText: appState.jobFitExportText, format: nil)
 
                 Button {
                     submit()
@@ -114,6 +114,19 @@ struct ReviewAndApplyView: View {
         } message: {
             Text(fixErrorMessage ?? "")
         }
+    }
+
+    /// The row only promises a "job fit analysis" when a job description was actually supplied;
+    /// otherwise it's a resume report, and says so.
+    private var jobFitRowTitle: String {
+        appState.jobFitAnalysis == nil ? "Resume Report" : "Job Fit Analysis"
+    }
+
+    private var jobFitRowSubtitle: String {
+        if let fit = appState.jobFitAnalysis {
+            return "\(fit.overallScore)% match — \(fit.summaryLabel.lowercased())"
+        }
+        return "\(appState.applicationKit?.resumeScore ?? 0)% resume score"
     }
 
     /// Falls back to the resume's own last/current position when no job target title was
@@ -195,7 +208,7 @@ struct ReviewAndApplyView: View {
                 Text("Reach a 100% score")
                     .font(.subheadline.bold())
                 Spacer()
-                Text("\(kit.jobFitScore)% now")
+                Text("\(kit.resumeScore)% now")
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
             }
@@ -289,18 +302,18 @@ struct ReviewAndApplyView: View {
         /// from "nothing happened" — the score only rewards structural things (metrics, sections,
         /// bullets), so tighter wording at the same structure legitimately scores the same.
         func successMessage(newScore: Int) -> String {
-            newScore > kit.jobFitScore
-                ? "Your wording was tightened and your score went from \(kit.jobFitScore)% to \(newScore)%."
+            newScore > kit.resumeScore
+                ? "Your wording was tightened and your score went from \(kit.resumeScore)% to \(newScore)%."
                 : "Your wording was tightened. The score stayed at \(newScore)% — what's left needs detail only you can add."
         }
 
         do {
             if appState.buildSource == .upload, let resumeText = appState.extractedResumeText, !resumeText.isEmpty {
-                let improved = try await ResumeAnalysisEngine.improveResume(resumeText: resumeText, suggestions: issues, currentScore: kit.jobFitScore)
+                let improved = try await ResumeAnalysisEngine.improveResume(resumeText: resumeText, suggestions: issues, currentScore: kit.resumeScore)
                 appState.updateExtractedResumeText(improved.improvedText)
                 appState.resumeTextWasManuallyFixed = true
                 appState.applicationKit = ApplicationKit(
-                    jobFitScore: improved.qualityScore,
+                    resumeScore: improved.qualityScore,
                     suggestions: improved.suggestions.map { ImprovementSuggestion(title: $0.title, detail: $0.detail) }
                 )
                 pendingSuccessMessage = successMessage(newScore: improved.qualityScore)
@@ -335,13 +348,13 @@ struct ReviewAndApplyView: View {
                 }
                 appState.experience.positions = rewritten
                 let rescored = try await ResumeAnalysisEngine.reviewGrammar(resumeText: appState.resumeExportText())
-                guard rescored.qualityScore >= kit.jobFitScore else {
+                guard rescored.qualityScore >= kit.resumeScore else {
                     appState.experience.positions = originalPositions
-                    print("[ResumeAnalysisEngine] fixResume: full-document rescore \(rescored.qualityScore) worse than \(kit.jobFitScore) — discarding")
+                    print("[ResumeAnalysisEngine] fixResume: full-document rescore \(rescored.qualityScore) worse than \(kit.resumeScore) — discarding")
                     throw ResumeAnalysisError.noImprovement
                 }
                 appState.applicationKit = ApplicationKit(
-                    jobFitScore: rescored.qualityScore,
+                    resumeScore: rescored.qualityScore,
                     suggestions: rescored.suggestions.map { ImprovementSuggestion(title: $0.title, detail: $0.detail) }
                 )
                 pendingSuccessMessage = successMessage(newScore: rescored.qualityScore)

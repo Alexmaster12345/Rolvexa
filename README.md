@@ -15,6 +15,7 @@ From there, Rolvexa:
 
 - Picks a professional template (Modern Edge, Minimal Pro, Creative Bold, Executive Suite) — or keeps your uploaded file's original layout untouched if you'd rather not restyle it.
 - Scores your resume and flags issues: spelling, weak passive phrasing ("responsible for" → "Led"), repeated words, missing sections, missing quantifiable metrics, and more.
+- **Job fit** — paste a job posting and Rolvexa compares it against your resume: which required skills you already cover, which are missing, and how you score on skills, recurring terms, seniority and education. Every figure is traceable to a count, so the number can be argued with. Without a posting it reports a *resume score* and says so, rather than implying a match it hasn't measured.
 - **"Fix It For Me"** — applies safe, deterministic fixes automatically, and on Apple Intelligence devices also rewrites bullet points and paragraphs for punchier phrasing (never inventing facts, numbers, or achievements that aren't already there).
 - Suggests other job titles you're a good fit for, based on your skills.
 - Generates a tailored cover letter and a job-fit analysis alongside your resume.
@@ -28,6 +29,7 @@ Everything runs locally on the device — no cloud AI, no API keys, no network c
 
 - **Text extraction** from uploaded files: `PDFKit` for text-based PDFs, a minimal in-house zip reader for DOCX, and `Vision` OCR for photos, screenshots, and scanned image-only PDFs. Photos are normalized upright first (a camera photo stores its rotation in an EXIF tag, and Vision reports text positions in the *stored* pixel space — without normalizing, a sideways photo's sections come out in reverse order).
 - **Scoring and suggestions** via `NaturalLanguage` tokenization, the system spell checker (`UITextChecker`), and deterministic heuristics.
+- **Job-fit matching** is set arithmetic over a skill vocabulary, weighted across four dimensions, with any dimension the posting is silent about dropped and its weight redistributed. Deliberately not a language model: a match percentage someone's application depends on has to be explainable line by line, and term matching can show its working. Matching is whole-token, so "R" doesn't match *Paris* and a posting asking for C++ doesn't also register a requirement for C.
 - **"Fix It For Me"** layers Apple Intelligence's on-device system model — via the [Foundation Models](https://developer.apple.com/documentation/foundationmodels) framework, using `@Generable` guided generation so the response is a guaranteed-shape Swift type rather than parsed free text — on top of the deterministic fixes.
 - **Export generation** is written from first principles. PDFs are drawn with CoreText/CoreGraphics (US Letter, multi-page, circular photo via an ellipse clip). `.docx` files are hand-written OOXML packed into a hand-rolled ZIP container, with the headshot embedded as a JPEG part and cropped to a circle by a DrawingML `ellipse` preset. Headshots are normalized through all eight EXIF orientations and centre-cropped square before either renderer sees them.
 - Built with **SwiftUI**. No third-party package dependencies.
