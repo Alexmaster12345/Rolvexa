@@ -5,8 +5,7 @@ struct ReviewAndApplyView: View {
     @Environment(AppRouter.self) private var router
     @Environment(AppState.self) private var appState
 
-    @State private var isSubmitting = false
-    @State private var didSubmit = false
+    @State private var didFinish = false
     @State private var fixErrorMessage: String?
     @State private var fixSuccessMessage: String?
     @State private var fixProgress: Double = 0
@@ -36,7 +35,7 @@ struct ReviewAndApplyView: View {
                 kitRow(
                     icon: "doc.text.fill",
                     title: "Resume",
-                    subtitle: "Tailored & ready",
+                    subtitle: kitSubtitle,
                     baseFilename: "Resume",
                     documentTitle: "Resume",
                     exportText: appState.resumeExportText,
@@ -50,23 +49,28 @@ struct ReviewAndApplyView: View {
                     format: keepsOriginalResumeLayout ? resumeOriginalFormat : nil,
                     includesPhoto: true
                 )
-                kitRow(icon: "envelope.fill", title: "Cover Letter", subtitle: "Tailored & ready", baseFilename: "CoverLetter", documentTitle: "Cover Letter", exportText: appState.coverLetterExportText, format: nil)
+                kitRow(icon: "envelope.fill", title: "Cover Letter", subtitle: kitSubtitle, baseFilename: "CoverLetter", documentTitle: "Cover Letter", exportText: appState.coverLetterExportText, format: nil)
                 jobFitKitRow
 
+                // Was "Submit Application", which slept for a second and then announced
+                // "Application submitted". Nothing was sent — the app has no networking at all,
+                // by design — so a user could tap it, believe they had applied, and never
+                // actually apply. The button now says what it does: the kit is finished, and
+                // sending it is a step the user takes themselves.
                 Button {
-                    submit()
+                    didFinish = true
                 } label: {
                     HStack {
-                        Image(systemName: "paperplane.fill")
-                        Text(isSubmitting ? "Submitting…" : "Submit Application")
+                        Image(systemName: "checkmark.circle.fill")
+                        Text("I'm done — my kit is ready")
                     }
                 }
                 .buttonStyle(.primaryGradient)
-                .disabled(isSubmitting)
 
-                Text("You can edit your kit anytime from your dashboard")
+                Text("Download each document above, then send them from your email or the employer's site. Rolvexa never uploads anything.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
             .padding(20)
@@ -105,8 +109,10 @@ struct ReviewAndApplyView: View {
                 .accessibilityLabel("Close and start over")
             }
         }
-        .alert("Application submitted", isPresented: $didSubmit) {
+        .alert("Your kit is ready", isPresented: $didFinish) {
             Button("Done") { router.popToRoot() }
+        } message: {
+            Text("Rolvexa doesn't send applications — download your resume and cover letter, then submit them yourself.")
         }
         .alert("Couldn't fix resume", isPresented: Binding(
             get: { fixErrorMessage != nil },
@@ -116,6 +122,12 @@ struct ReviewAndApplyView: View {
         } message: {
             Text(fixErrorMessage ?? "")
         }
+    }
+
+    /// "Tailored" is only true when a target role was given — otherwise the kit is simply
+    /// built from what was entered, and saying otherwise overstates what the app did.
+    private var kitSubtitle: String {
+        appState.jobTarget.title.isEmpty ? "Ready to download" : "Tailored & ready"
     }
 
     /// The row only promises a "job fit analysis" when a job description was actually supplied;
@@ -166,9 +178,14 @@ struct ReviewAndApplyView: View {
                 Text(jobSummaryCompany)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    tag("Remote")
-                    tag("Full-time")
+                // No "Remote"/"Full-time" chips here: the app never asks for the work
+                // arrangement or employment type, so those were decoration asserting facts
+                // about a job it knows nothing about. The level is shown only when a posting
+                // was actually supplied.
+                if appState.jobFitAnalysis != nil {
+                    HStack(spacing: 6) {
+                        tag("Matched to your posting")
+                    }
                 }
             }
             Spacer()
@@ -443,14 +460,6 @@ struct ReviewAndApplyView: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.appCardBackground))
     }
 
-    private func submit() {
-        isSubmitting = true
-        Task {
-            try? await Task.sleep(for: .seconds(1))
-            isSubmitting = false
-            didSubmit = true
-        }
-    }
 }
 
 #Preview {

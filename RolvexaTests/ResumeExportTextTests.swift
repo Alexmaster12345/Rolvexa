@@ -102,6 +102,29 @@ struct ResumeExportTextTests {
         #expect(state.resumeExportText().contains("the Senior Facilities Manager role at Northwind Labs"))
     }
 
+    @Test("The cover letter picks the right indefinite article", arguments: [
+        ("Operations Manager", "As an Operations Manager"),
+        ("Product Designer", "As a Product Designer"),
+        ("Architect", "As an Architect"),
+        // Initialisms are read letter by letter, so the letter's name decides: "eye-tee"
+        // takes "an", "you-ex" takes "a".
+        ("IT Manager", "As an IT Manager"),
+        ("UX Researcher", "As a UX Researcher"),
+        ("HR Partner", "As an HR Partner"),
+        ("QA Engineer", "As a QA Engineer"),
+        // Vowel letter, consonant sound.
+        ("University Lecturer", "As a University Lecturer"),
+        ("European Sales Lead", "As a European Sales Lead")
+    ])
+    func coverLetterArticleAgreement(role: String, expected: String) {
+        let state = AppState()
+        state.buildSource = .write
+        state.experience.fullName = "Jane Doe"
+        state.experience.currentRole = role
+        state.experience.skills = ["Reporting"]
+        #expect(state.coverLetterExportText().contains(expected))
+    }
+
     // MARK: - Never inventing content
 
     @Test("An upload whose extraction failed produces no invented person")

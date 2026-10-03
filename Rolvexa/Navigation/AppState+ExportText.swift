@@ -190,7 +190,7 @@ extension AppState {
             : "Recent highlights: \(highlights)."
         // The opening sentence only claims a role and skills when there are some to claim.
         let credentials = [
-            role.isEmpty ? nil : "a \(role) with \(experience.yearsOfExperience) of experience",
+            role.isEmpty ? nil : "\(indefiniteArticle(for: role)) \(role) with \(experience.yearsOfExperience) of experience",
             skills.isEmpty ? nil : "skills in \(skills)"
         ].compactMap { $0 }.joined(separator: " and ")
         let opening = credentials.isEmpty
@@ -214,6 +214,30 @@ extension AppState {
     /// The exported report. Leads with the job-fit comparison when there's a posting to compare
     /// against, and is explicit that there isn't one when there isn't — the previous version
     /// printed "Job Fit Score" over the resume quality score either way.
+    /// "an Operations Manager", not "a Operations Manager".
+    ///
+    /// Judged on the initial sound rather than the letter, so the handful of job titles that
+    /// start with a vowel letter but a consonant sound ("a University Administrator",
+    /// "a One-to-One Coach") still read correctly.
+    private func indefiniteArticle(for word: String) -> String {
+        let first = word.split(separator: " ").first.map(String.init) ?? word
+        guard let initial = first.first else { return "a" }
+
+        // An initialism is read letter by letter, so the letter's *name* decides the article:
+        // "an IT Manager" (eye-tee) but "a UX Researcher" (you-ex), "a URL Validator".
+        let isInitialism = first.count <= 4 && first.allSatisfy { $0.isUppercase || $0.isNumber }
+        if isInitialism {
+            return initial == "U" ? "a" : ("AEFHILMNORSX".contains(initial) ? "an" : "a")
+        }
+
+        // Ordinary words with a vowel letter but a consonant sound.
+        let lowered = first.lowercased()
+        let consonantSounded = ["eu", "uni", "use", "usu", "ubiq", "one", "once", "ewe"]
+        if consonantSounded.contains(where: lowered.hasPrefix) { return "a" }
+
+        return "aeiou".contains(lowered.first ?? " ") ? "an" : "a"
+    }
+
     func jobFitExportText() -> String {
         var lines: [String] = []
 
