@@ -221,15 +221,83 @@ enum ResumeTextExtraction {
     /// top-to-bottom interleaves the two ("CONTACT / ELLIOT ALDERSON / elliot@… / Highly skilled
     /// Linux Administrator…"), which scrambles every section. So a vertical gutter is detected
     /// first and each column is read out whole, left to right.
+    ///
+    /// Applied recursively, because columns nest: an Experience section commonly sets the
+    /// employer, location and dates in a narrow strip beside the achievement bullets. Splitting
+    /// the page only once left that inner pair interleaved — "ALLSAFE / Senior Linux
+    /// Administrator / CYBERSECURITY / • Managed… / New York / • Implemented… / Jan 2015 - Dec
+    /// 2019" — which tore employer names in half and scattered the dates through the bullets.
+    /// A recursive XY-cut: at each step the page is divided along whichever whitespace gap is
+    /// wider — a vertical gutter between columns, or a horizontal band between blocks — and each
+    /// piece is then cut again.
+    ///
+    /// Choosing the larger gap is what keeps a job's heading with its own bullets. Cutting
+    /// vertically first would read every employer, then every bullet; cutting horizontally first
+    /// would slice straight through the page's sidebar. Taking the more confident cut at each
+    /// step gives: page → sidebar | main, then main → one band per job, then each band →
+    /// employer strip | its bullets.
     private static func readingOrder(
-        _ observations: [VNRecognizedTextObservation]
+        _ observations: [VNRecognizedTextObservation],
+        depth: Int = 0
     ) -> [VNRecognizedTextObservation] {
-        guard let split = columnSplit(in: observations) else {
-            return sortedTopToBottom(observations)
+        guard observations.count > 1, depth < 5 else { return sortedTopToBottom(observations) }
+
+        func splitVertically(_ vertical: (position: CGFloat, width: CGFloat)) -> [VNRecognizedTextObservation] {
+            let left = observations.filter { $0.boundingBox.midX < vertical.position }
+            let right = observations.filter { $0.boundingBox.midX >= vertical.position }
+            return readingOrder(left, depth: depth + 1) + readingOrder(right, depth: depth + 1)
         }
-        let left = observations.filter { $0.boundingBox.midX < split }
-        let right = observations.filter { $0.boundingBox.midX >= split }
-        return sortedTopToBottom(left) + sortedTopToBottom(right)
+        func splitHorizontally(_ horizontal: (position: CGFloat, width: CGFloat)) -> [VNRecognizedTextObservation] {
+            // Vision's origin is bottom-left, so the *upper* band is the one above the split.
+            let upper = observations.filter { $0.boundingBox.midY >= horizontal.position }
+            let lower = observations.filter { $0.boundingBox.midY < horizontal.position }
+            return readingOrder(upper, depth: depth + 1) + readingOrder(lower, depth: depth + 1)
+        }
+
+        // The page itself is cut into columns first: a sidebar runs the whole height, so banding
+        // the page horizontally would slice through it and interleave its sections with the main
+        // column's.
+        //
+        // Inside a column the preference flips to horizontal. An Experience section repeats the
+        // same shape for every job — employer strip beside bullets — so its inner gutter runs the
+        // column's full height and looks exactly like a real column. Cutting vertically there
+        // yields every employer followed by every bullet. Cutting into one band per job first,
+        // then splitting each band, keeps each heading with its own bullets.
+        if depth == 0, let vertical = columnSplit(in: observations) {
+            return splitVertically(vertical)
+        }
+        if let horizontal = rowSplit(in: observations) {
+            return splitHorizontally(horizontal)
+        }
+        // A single job band holds only a handful of lines, far fewer than a page column, so the
+        // page-level minimum would reject it and leave the employer strip interleaved with its
+        // own bullets. The balance checks inside still guard against splitting on noise.
+        if let vertical = columnSplit(in: observations, minimumObservations: 4) {
+            return splitVertically(vertical)
+        }
+        return sortedTopToBottom(observations)
+    }
+
+    /// The widest horizontal band of whitespace running the full width of `observations`, used
+    /// to separate stacked blocks (one job from the next) before looking for columns inside them.
+    private static func rowSplit(in observations: [VNRecognizedTextObservation]) -> (position: CGFloat, width: CGFloat)? {
+        guard observations.count >= 4 else { return nil }
+        let sorted = observations.sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+        // A gap only counts if it clears the tallest line around it, otherwise ordinary line
+        // spacing would be mistaken for a block boundary.
+        let typicalHeight = sorted.map(\.boundingBox.height).reduce(0, +) / CGFloat(sorted.count)
+
+        var best: (position: CGFloat, width: CGFloat)?
+        for index in 0..<(sorted.count - 1) {
+            let lowestSoFar = sorted[0...index].map(\.boundingBox.minY).min() ?? 0
+            let nextTop = sorted[index + 1].boundingBox.maxY
+            let gap = lowestSoFar - nextTop
+            guard gap > typicalHeight * 0.9 else { continue }
+            if best == nil || gap > best!.width {
+                best = (nextTop + gap / 2, gap)
+            }
+        }
+        return best
     }
 
     private static func sortedTopToBottom(
@@ -253,8 +321,11 @@ enum ResumeTextExtraction {
     /// Deliberately conservative — a false positive would split a normal single-column resume in
     /// half, which is far worse than leaving a two-column one interleaved. It requires a genuinely
     /// empty vertical band of real width with a substantial share of the text on both sides.
-    private static func columnSplit(in observations: [VNRecognizedTextObservation]) -> CGFloat? {
-        guard observations.count >= 8 else { return nil }
+    private static func columnSplit(
+        in observations: [VNRecognizedTextObservation],
+        minimumObservations: Int = 8
+    ) -> (position: CGFloat, width: CGFloat)? {
+        guard observations.count >= minimumObservations else { return nil }
 
         // A handful of boxes may legitimately cross any candidate line (a full-width title, an
         // OCR box that merged across the gutter), so a few crossings are tolerated rather than
@@ -292,7 +363,8 @@ enum ResumeTextExtraction {
             guard left >= minimumPerColumn, right >= minimumPerColumn else { return nil }
             return (center, width)
         }
-        return candidates.max { $0.width < $1.width }?.center
+        guard let best = candidates.max(by: { $0.width < $1.width }) else { return nil }
+        return (best.center, best.width)
     }
 
     // MARK: - DOCX
