@@ -236,6 +236,7 @@ struct ResumeKitView: View {
                 email: appState.extractedEmail,
                 phone: appState.extractedPhone,
                 location: appState.extractedLocation,
+                links: appState.extractedLinks,
                 education: appState.extractedEducation,
                 style: appState.selectedResumeTemplateStyle
             )

@@ -11,8 +11,15 @@ struct ResumeTemplateCard: View {
     var email: String? = nil
     var phone: String? = nil
     var location: String? = nil
+    /// Profile/portfolio URLs (LinkedIn, GitHub, …), shown with the rest of the contact details.
+    var links: [String] = []
     var education: String? = nil
     var style: ResumeTemplateStyle = .modernEdge
+
+    /// The contact values the flowing and banner layouts print as a single run.
+    private var contactParts: [String] {
+        ([email, phone, location].compactMap { $0 } + links).filter { !$0.isEmpty }
+    }
 
     var body: some View {
         Group {
@@ -62,6 +69,11 @@ struct ResumeTemplateCard: View {
                     sidebarRow(icon: "envelope.fill", text: email ?? "Add your email to see it here")
                     sidebarRow(icon: "phone.fill", text: phone ?? "Add your phone to see it here")
                     sidebarRow(icon: "mappin.and.ellipse", text: location ?? "Add your location to see it here")
+                    // Profile links are part of the contact block in the exported files; without
+                    // these rows the preview silently dropped them.
+                    ForEach(links, id: \.self) { link in
+                        sidebarRow(icon: "link", text: link)
+                    }
                 }
             }
 
@@ -141,7 +153,7 @@ struct ResumeTemplateCard: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
-                Text([email, phone, location].compactMap { $0 }.joined(separator: "  •  "))
+                Text(contactParts.joined(separator: "  •  "))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -213,7 +225,7 @@ struct ResumeTemplateCard: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.9))
                 }
-                Text([email, phone, location].compactMap { $0 }.joined(separator: "  •  "))
+                Text(contactParts.joined(separator: "  •  "))
                     .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.85))
             }
@@ -289,7 +301,7 @@ struct ResumeTemplateCard: View {
                     .foregroundStyle(.secondary)
             }
             Rectangle().fill(accent).frame(width: 70, height: 2).padding(.top, 2)
-            Text([email, phone, location].compactMap { $0 }.joined(separator: "   |   "))
+            Text(contactParts.joined(separator: "   |   "))
                 .font(.system(size: 12, design: .serif))
                 .foregroundStyle(.secondary)
 
@@ -462,7 +474,11 @@ struct ResumeTemplateCard: View {
         summary: "Senior Product Designer with 5–7 years of experience, skilled in Product Design, Figma, User Research. Seeking to bring this expertise to the Senior Product Designer role at Northwind Labs.",
         skills: ["Product Design", "Figma", "User Research"],
         yearsOfExperience: "5–7 years",
-        experienceBullets: ["Led design for a resume-building app", "Improved onboarding conversion by 20%"]
+        experienceBullets: ["Led design for a resume-building app", "Improved onboarding conversion by 20%"],
+        email: "jamie@example.com",
+        phone: "555-0100",
+        location: "San Francisco, CA",
+        links: ["www.linkedin.com/in/jamiechen", "github.com/jamiechen"]
     )
     .padding(20)
 }
