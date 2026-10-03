@@ -14,6 +14,44 @@ private extension CGColor {
     }
 }
 
+/// Text glyphs standing in for the SF Symbols the on-screen card draws beside each contact row.
+///
+/// Real icons would mean embedding images, which in a hand-built `.docx` means media parts,
+/// relationship entries and drawing XML for every icon. These Unicode symbols live in the
+/// standard system fonts on both macOS and Windows, so Word and any PDF reader render them
+/// without the file carrying any image data.
+private enum ContactGlyph {
+    static let email = "\u{2709}"     // ✉
+    static let phone = "\u{260E}"     // ☎
+    static let location = "\u{2302}"  // ⌂
+    // Deliberately an arrow rather than 🔗: that emoji is outside the Basic Multilingual Plane,
+    // so CoreText embeds a subset of the colour-emoji font and the PDF jumps from ~15KB to
+    // ~108KB for one glyph. This one lives in the standard text fonts.
+    static let link = "\u{2197}"      // ↗
+
+    /// A whole "a | b | c" contact line with each part prefixed by its glyph, for the layouts
+    /// that render contact details as one run rather than a stacked list.
+    static func decorate(contactLine: String) -> String {
+        contactLine
+            .components(separatedBy: "|")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { "\(forContactValue($0)) \($0)" }
+            .joined(separator: "   ")
+    }
+
+    /// Matches a contact value to its glyph the same way the preview picks an SF Symbol.
+    static func forContactValue(_ value: String) -> String {
+        let lowered = value.lowercased()
+        if value.contains("@") { return email }
+        if lowered.hasPrefix("http") || lowered.hasPrefix("www.")
+            || ResumeSectionKit.linkDomains.contains(where: lowered.contains) { return link }
+        // A value that is mostly digits is a phone number; anything else is a place.
+        let digits = value.filter(\.isNumber).count
+        return digits >= 7 ? phone : location
+    }
+}
+
 /// The pieces of an assembled resume's text (see `AppState+ExportText.swift`) that a sidebar or
 /// banner layout needs to place separately from the flowing body — name/role/contact go in the
 /// colored region, the SKILLS section is pulled out to render there too (as a bulleted list
@@ -159,8 +197,17 @@ enum PDFDocumentRenderer {
 
         var reachedFirstHeader = false
         var isNameLine = true
+        var previousLine = ""
         for line in body.components(separatedBy: "\n") {
+            defer { previousLine = line }
             if ResumeSectionKit.isSectionHeader(line) {
+                if reachedFirstHeader,
+                   WordDocumentRenderer.needsSpacingBefore(header: line, previousLine: previousLine) {
+                    attributed.append(NSAttributedString(
+                        string: "\n",
+                        attributes: [fontAttributeKey: CTFontCreateWithName(regularFontName as CFString, 6, nil)]
+                    ))
+                }
                 reachedFirstHeader = true
                 attributed.append(NSAttributedString(
                     string: line + "\n",
@@ -214,7 +261,7 @@ enum PDFDocumentRenderer {
             let trimmed = part.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
             sidebarAttributed.append(NSAttributedString(
-                string: trimmed + "\n",
+                string: "\(ContactGlyph.forContactValue(trimmed))  \(trimmed)\n",
                 attributes: [fontAttributeKey: CTFontCreateWithName("Helvetica" as CFString, 10, nil), colorAttributeKey: whiteColor]
             ))
         }
@@ -310,7 +357,7 @@ enum PDFDocumentRenderer {
         }
         if !parsed.contactLine.isEmpty {
             bannerAttributed.append(NSAttributedString(
-                string: parsed.contactLine + "\n",
+                string: ContactGlyph.decorate(contactLine: parsed.contactLine) + "\n",
                 attributes: [fontAttributeKey: CTFontCreateWithName("Helvetica" as CFString, 11, nil), colorAttributeKey: whiteColor]
             ))
         }
@@ -367,8 +414,18 @@ enum PDFDocumentRenderer {
     // MARK: - Shared helpers
 
     private static func appendBodyLines(_ lines: [String], to attributed: NSMutableAttributedString, accentColor: CGColor, regularFontName: String, boldFontName: String) {
+        var previousLine = ""
         for line in lines {
+            defer { previousLine = line }
             if ResumeSectionKit.isSectionHeader(line) {
+                // Separates one job (or school) from the next; without it an employer name runs
+                // straight on from the previous entry's last bullet.
+                if WordDocumentRenderer.needsSpacingBefore(header: line, previousLine: previousLine) {
+                    attributed.append(NSAttributedString(
+                        string: "\n",
+                        attributes: [fontAttributeKey: CTFontCreateWithName(regularFontName as CFString, 6, nil)]
+                    ))
+                }
                 attributed.append(NSAttributedString(
                     string: line + "\n",
                     attributes: [fontAttributeKey: CTFontCreateWithName(boldFontName as CFString, 13, nil), colorAttributeKey: accentColor]
@@ -429,14 +486,33 @@ enum WordDocumentRenderer {
 
     private static func bodyParagraphs(_ lines: [String], font: String, accentColorHex: String) -> String {
         var result = ""
+        var previousLine = ""
         for line in lines {
             if ResumeSectionKit.isSectionHeader(line) {
+                // Without this the next employer's name butts straight up against the previous
+                // job's last bullet and the two roles read as one block.
+                if needsSpacingBefore(header: line, previousLine: previousLine) {
+                    result += paragraph("", font: font, sizeHalfPoints: 14)
+                }
                 result += paragraph(line, font: font, sizeHalfPoints: 26, bold: true, color: accentColorHex)
             } else {
                 result += paragraph(line, font: font, sizeHalfPoints: 22)
             }
+            previousLine = line
         }
         return result
+    }
+
+    /// Whether a blank line belongs above this heading.
+    ///
+    /// True once real content precedes it, so the gap separates one job or school from the next
+    /// rather than appearing at the top of a column. Suppressed directly beneath another heading
+    /// — "EDUCATION" immediately followed by "NEW YORK UNIVERSITY" should stay tight, since the
+    /// space belongs between entries, not between a section title and its first entry.
+    static func needsSpacingBefore(header: String, previousLine: String) -> Bool {
+        let trimmed = previousLine.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        return !ResumeSectionKit.isSectionHeader(previousLine)
     }
 
     /// - Parameter style: the selected `ResumeTemplateStyle` — drives which structural layout is
@@ -501,8 +577,13 @@ enum WordDocumentRenderer {
 
         var reachedFirstHeader = false
         var isNameLine = true
+        var previousLine = ""
         for line in body.components(separatedBy: "\n") {
+            defer { previousLine = line }
             if ResumeSectionKit.isSectionHeader(line) {
+                if reachedFirstHeader, needsSpacingBefore(header: line, previousLine: previousLine) {
+                    paragraphs += paragraph("", font: font, sizeHalfPoints: 14)
+                }
                 reachedFirstHeader = true
                 paragraphs += paragraph(line, font: font, sizeHalfPoints: 26, bold: true, color: style.accentColorHex)
             } else if !reachedFirstHeader, !line.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -535,7 +616,10 @@ enum WordDocumentRenderer {
         for part in parsed.contactLine.components(separatedBy: "|") {
             let trimmed = part.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
-            sidebarContent += paragraph(trimmed, font: font, sizeHalfPoints: 18, color: "FFFFFF")
+            sidebarContent += paragraph(
+                "\(ContactGlyph.forContactValue(trimmed))  \(trimmed)",
+                font: font, sizeHalfPoints: 18, color: "FFFFFF"
+            )
         }
         if !parsed.skills.isEmpty {
             sidebarContent += paragraph("", font: font, sizeHalfPoints: 18, color: "FFFFFF")
@@ -585,7 +669,7 @@ enum WordDocumentRenderer {
             bannerContent += paragraph(parsed.role, font: font, sizeHalfPoints: 26, color: "FFFFFF")
         }
         if !parsed.contactLine.isEmpty {
-            bannerContent += paragraph(parsed.contactLine, font: font, sizeHalfPoints: 20, color: "FFFFFF")
+            bannerContent += paragraph(ContactGlyph.decorate(contactLine: parsed.contactLine), font: font, sizeHalfPoints: 20, color: "FFFFFF")
         }
 
         var mainContent = paragraph(title, font: font, sizeHalfPoints: 18, color: "808080")
