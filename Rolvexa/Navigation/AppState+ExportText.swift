@@ -88,6 +88,16 @@ extension AppState {
             lines.append(summary)
             lines.append("")
         }
+        // The skills were parsed out of the resume into `experience.skills` at upload, and the
+        // preview takes them from there as a direct parameter. The exporters have no such
+        // parameter — they recover skills by looking for a SKILLS heading in this text — so
+        // without writing the section back out, the sidebar's "TECHNICAL SKILLS" list rendered
+        // on screen was simply absent from every downloaded PDF and Word file.
+        if !experience.skills.isEmpty {
+            lines.append("SKILLS")
+            lines.append(experience.skills.joined(separator: ", "))
+            lines.append("")
+        }
         lines.append(cleanedBody)
 
         return lines.joined(separator: "\n")

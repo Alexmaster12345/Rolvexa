@@ -74,7 +74,12 @@ private func parseResumeBody(_ body: String) -> ParsedResumeBody {
             while index < lines.count, !ResumeSectionKit.isSectionHeader(lines[index]) {
                 for piece in lines[index].components(separatedBy: ",") {
                     let trimmed = piece.trimmingCharacters(in: .whitespaces)
-                    if !trimmed.isEmpty { skills.append(trimmed) }
+                    guard !trimmed.isEmpty else { continue }
+                    // The resume's own SKILLS section and the one written back out from the
+                    // parsed skills can both appear, and OCR may differ in case ("PYTHON" vs
+                    // "Python"), so matching is case-insensitive.
+                    let isDuplicate = skills.contains { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+                    if !isDuplicate { skills.append(trimmed) }
                 }
                 index += 1
             }
