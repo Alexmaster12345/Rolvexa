@@ -94,22 +94,14 @@ struct OnboardingView: View {
                 // The app's central claim is that nothing leaves the device, so the page that
                 // spells out exactly what that does and doesn't cover is reachable before the
                 // user hands over a resume — not buried in a settings screen afterwards.
-                Button {
+                Button("Privacy & Terms") {
                     router.push(.privacyAndTerms)
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lock.shield")
-                        Text("Privacy & Terms")
-                        Text("·")
-                        Text("Everything stays on your device")
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.footnote)
                 }
                 .buttonStyle(.plain)
+                .font(.footnote)
                 .foregroundStyle(Color.indigo)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 4)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 8)
             }
             .padding(20)
         }
