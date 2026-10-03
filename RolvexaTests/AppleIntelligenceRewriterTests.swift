@@ -31,11 +31,61 @@ struct AppleIntelligenceRewriterTests {
     @Test("A rewrite keeping every digit in order is accepted", arguments: [
         ("Responsible for cutting costs by 40% across 3 sites", "Cut costs by 40% across 3 sites"),
         ("Was responsible for managing 12 engineers", "Led 12 engineers"),
-        ("Helped with the migration", "Drove the migration")
+        ("The reporting system was maintained by me", "Maintained the reporting system"),
+        // "Built" already claims authorship, so restating it as "developed" adds nothing.
+        ("Built the billing system", "Developed the billing system")
     ])
     func acceptsRewritesThatKeepTheFacts(original: String, rewritten: String) async {
         let rewriter = AppleIntelligenceResumeRewriter.shared
         #expect(await rewriter.isSafeRewrite(original: original, rewritten: rewritten))
+    }
+
+    // MARK: - Claims beyond numbers
+
+    @Test("A rewrite may not promote the candidate from user to author", arguments: [
+        // The number gate can't see any of these: not one digit changes, but each one
+        // upgrades what the person actually did.
+        ("Worked with Nvidia GPUs.", "Designed Nvidia GPU infrastructure."),
+        ("Worked on the billing system.", "Developed the billing system."),
+        ("Worked on the data pipeline.", "Engineered the data pipeline."),
+        ("Assisted with the migration.", "Led the migration."),
+        ("Helped with the rollout.", "Drove the rollout."),
+        ("Supported the billing system.", "Owned the billing system."),
+        ("Contributed to the design review.", "Architected the design review.")
+    ])
+    func rejectsOwnershipEscalation(original: String, rewritten: String) async {
+        let rewriter = AppleIntelligenceResumeRewriter.shared
+        #expect(await !rewriter.isSafeRewrite(original: original, rewritten: rewritten))
+    }
+
+    @Test("A rewrite may not invent a technology the resume never mentioned", arguments: [
+        ("Deployed services to AWS.", "Deployed services to AWS and Kubernetes."),
+        ("Built reporting tools.", "Built reporting tools in Python."),
+        ("Managed the release process.", "Managed the release process with Jenkins and Docker.")
+    ])
+    func rejectsInventedTechnologies(original: String, rewritten: String) async {
+        let rewriter = AppleIntelligenceResumeRewriter.shared
+        #expect(await !rewriter.isSafeRewrite(original: original, rewritten: rewritten))
+    }
+
+    @Test("A rewrite may not invent scope the original didn't state")
+    func rejectsInventedScope() async {
+        let rewriter = AppleIntelligenceResumeRewriter.shared
+        #expect(await !rewriter.isSafeRewrite(
+            original: "Improved the release process.",
+            rewritten: "Improved the release process for a team of engineers worldwide."
+        ))
+    }
+
+    @Test("Once ownership is claimed, rewording it freely is allowed")
+    func ownershipRewordingIsAllowedOnceClaimed() async {
+        // "Responsible for managing" already asserts the claim, so "led" adds nothing new —
+        // being strict here would reject exactly the rewrites this feature exists to make.
+        let rewriter = AppleIntelligenceResumeRewriter.shared
+        #expect(await rewriter.isSafeRewrite(
+            original: "Responsible for managing the deployment pipeline.",
+            rewritten: "Led the deployment pipeline."
+        ))
     }
 
     @Test("An empty or runaway rewrite is rejected")
@@ -48,10 +98,14 @@ struct AppleIntelligenceRewriterTests {
         #expect(await !rewriter.isSafeRewrite(original: original, rewritten: runaway))
     }
 
-    @Test("Text with no digits is judged on length alone")
+    @Test("Text with no digits is still judged on its claims")
     func digitFreeTextIsAccepted() async {
+        // This originally asserted "Helped with the rollout" → "Drove the rollout" was safe,
+        // which it isn't: no digit changes, but the candidate is promoted from helper to
+        // driver. A neutral restatement is the honest version of this rewrite.
         let rewriter = AppleIntelligenceResumeRewriter.shared
-        #expect(await rewriter.isSafeRewrite(original: "Helped with the rollout", rewritten: "Drove the rollout"))
+        #expect(await rewriter.isSafeRewrite(original: "Helped with the rollout", rewritten: "Supported the rollout"))
+        #expect(await !rewriter.isSafeRewrite(original: "Helped with the rollout", rewritten: "Drove the rollout"))
     }
 
     // MARK: - Availability

@@ -81,7 +81,19 @@ in  → Responsible for managing the deployment pipeline and helped with
 out → Led deployment pipeline management and reduced release times by 40%.
 ```
 
-Weak phrasing replaced, the 40% untouched. Any output that drops or changes a number is discarded and the original kept.
+Weak phrasing replaced, the 40% untouched. Three gates stand between the model and your resume,
+and failing any one of them discards the rewrite and keeps your original:
+
+| Gate | Rejects |
+|---|---|
+| Numbers | Any figure changed, dropped or invented — compared as whole numbers in order, so "3 sites" can't become "30 sites" |
+| Ownership | A promotion from user to author: *"Worked with Nvidia GPUs"* → *"**Designed** Nvidia GPU infrastructure"*. Once the original claims ownership, rewording it is free |
+| New content | A technology, employer or scope the original never mentioned — *"Built reporting tools"* → *"Built reporting tools **in Python**"* |
+
+The second and third exist because the number check is blind to the most plausible kind of
+drift: not one digit changes in any of those examples. In practice the gates reject roughly two
+rewrites in five, which is the intended trade — an unchanged bullet costs nothing, an inflated
+one is a lie on a job application.
 
 
 ## Architecture
