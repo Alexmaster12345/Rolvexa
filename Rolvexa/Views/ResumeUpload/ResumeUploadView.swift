@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PDFKit
+import PhotosUI
 
 struct ResumeUploadView: View {
     @Environment(AppRouter.self) private var router
@@ -9,9 +10,24 @@ struct ResumeUploadView: View {
     @State private var isImporterPresented = false
     @State private var selectedFileName: String?
     @State private var selectedFileURL: URL?
+    /// Set instead of `selectedFileURL` when the resume came from the photo library, which hands
+    /// back bytes rather than a file on disk.
+    @State private var selectedImageData: Data?
+    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isAnalyzing = false
+    @State private var photoLoadFailed = false
 
     private var docxType: UTType { UTType(filenameExtension: "docx") ?? .data }
+
+    private var hasSelection: Bool {
+        selectedFileURL != nil || selectedImageData != nil
+    }
+
+    /// Lowercased extension of whatever is currently selected, used to pick the extraction path.
+    private var selectedFileExtension: String {
+        if let selectedFileURL { return selectedFileURL.pathExtension.lowercased() }
+        return (selectedFileName as NSString?)?.pathExtension.lowercased() ?? ""
+    }
 
     var body: some View {
         ScrollView {
@@ -40,7 +56,7 @@ struct ResumeUploadView: View {
                     }
                 }
                 .buttonStyle(.primaryGradient)
-                .disabled(selectedFileName == nil || isAnalyzing)
+                .disabled(!hasSelection || isAnalyzing)
             }
             .padding(20)
         }
@@ -57,12 +73,44 @@ struct ResumeUploadView: View {
                     .background(Capsule().fill(Color.indigo.opacity(0.12)))
             }
         }
-        .fileImporter(isPresented: $isImporterPresented, allowedContentTypes: [.pdf, docxType]) { result in
+        // `.image` covers JPEG/PNG/HEIC and friends, so a resume saved to Files as a photo or
+        // screenshot is accepted alongside real documents.
+        .fileImporter(isPresented: $isImporterPresented, allowedContentTypes: [.pdf, docxType, .image]) { result in
             if case .success(let url) = result {
+                clearSelection()
                 selectedFileName = url.lastPathComponent
                 selectedFileURL = url
             }
         }
+        .onChange(of: selectedPhotoItem) { _, newItem in
+            guard let newItem else { return }
+            Task { await loadPhoto(newItem) }
+        }
+        .alert("Couldn't read that image", isPresented: $photoLoadFailed) {
+            Button("OK") { photoLoadFailed = false }
+        } message: {
+            Text("Try picking it again, or export it to Files and upload it from there.")
+        }
+    }
+
+    private func clearSelection() {
+        selectedFileName = nil
+        selectedFileURL = nil
+        selectedImageData = nil
+    }
+
+    /// Photos hands back bytes rather than a URL, so the image is kept in memory and the
+    /// filename/extension are derived from the item's own content type.
+    private func loadPhoto(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self) else {
+            selectedPhotoItem = nil
+            photoLoadFailed = true
+            return
+        }
+        let fileExtension = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+        clearSelection()
+        selectedImageData = data
+        selectedFileName = "Resume photo.\(fileExtension)"
     }
 
     private var header: some View {
@@ -88,15 +136,25 @@ struct ResumeUploadView: View {
 
             Text("Tap to upload your resume")
                 .font(.subheadline.bold())
-            Text("PDF or DOCX, up to 10MB")
+            Text("PDF, Word, or a photo of your resume")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Button("Browse Files") {
-                isImporterPresented = true
+            HStack(spacing: 10) {
+                Button {
+                    isImporterPresented = true
+                } label: {
+                    Label("Browse Files", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+                .tint(.indigo)
+
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
+                    Label("Photos", systemImage: "photo.on.rectangle")
+                }
+                .buttonStyle(.bordered)
+                .tint(.indigo)
             }
-            .buttonStyle(.bordered)
-            .tint(.indigo)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
@@ -108,21 +166,22 @@ struct ResumeUploadView: View {
     }
 
     private func selectedFileRow(name: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "doc.fill")
-                .foregroundStyle(.red)
+        let isImage = ResumeTextExtraction.isImageFileExtension(selectedFileExtension)
+        return HStack(spacing: 12) {
+            Image(systemName: isImage ? "photo.fill" : "doc.fill")
+                .foregroundStyle(isImage ? Color.indigo : .red)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
                     .font(.subheadline.bold())
                     .lineLimit(1)
-                Text("Ready to analyze")
+                Text(isImage ? "Ready to scan for text" : "Ready to analyze")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
             Button {
-                selectedFileName = nil
-                selectedFileURL = nil
+                clearSelection()
+                selectedPhotoItem = nil
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
@@ -390,6 +449,16 @@ struct ResumeUploadView: View {
         return body.joined(separator: "\n")
     }
 
+    private func unreadableFileAdvice(for fileExtension: String) -> String {
+        if ResumeTextExtraction.isImageFileExtension(fileExtension) {
+            return "We couldn't find readable text in this photo. Try again in brighter, even lighting with the page flat and filling the frame, and make sure the whole resume is in focus."
+        }
+        if fileExtension == "pdf" {
+            return "This PDF may be a scanned image with text too faint or stylized for on-device OCR to read. Try a clearer scan or a text-based PDF."
+        }
+        return "This DOCX file's contents couldn't be read — please try a PDF instead."
+    }
+
     private func buildReview(from text: String?, fileExtension: String) async -> ResumeReview {
         guard let text else {
             return ResumeReview(
@@ -403,9 +472,7 @@ struct ResumeUploadView: View {
                 suggestions: [
                     ImprovementSuggestion(
                         title: "We couldn't read this file",
-                        detail: fileExtension == "pdf"
-                            ? "This PDF may be a scanned image with text too faint or stylized for on-device OCR to read. Try a clearer scan or a text-based PDF."
-                            : "This DOCX file's contents couldn't be read — please try a PDF instead."
+                        detail: unreadableFileAdvice(for: fileExtension)
                     )
                 ]
             )
@@ -418,18 +485,31 @@ struct ResumeUploadView: View {
     }
 
     private func analyze() {
-        guard let selectedFileName, let selectedFileURL else { return }
+        guard let selectedFileName, hasSelection else { return }
         isAnalyzing = true
         appState.uploadedFileName = selectedFileName
+        let fileExtension = selectedFileExtension
+        let imageData = selectedImageData
+        let fileURL = selectedFileURL
 
         Task {
-            let extractedText = extractText(from: selectedFileURL)
-            appState.uploadedResumeFileData = readFileData(from: selectedFileURL)
-            appState.uploadedResumeFileExtension = selectedFileURL.pathExtension.lowercased()
+            // Two sources: a document/image picked from Files (a URL), or a photo picked from
+            // the library (raw bytes, no file on disk). OCR is identical either way.
+            let extractedText: String?
+            if let imageData {
+                extractedText = ResumeTextExtraction.extractFromImageData(imageData)
+                appState.uploadedResumeFileData = imageData
+            } else if let fileURL {
+                extractedText = extractText(from: fileURL)
+                appState.uploadedResumeFileData = readFileData(from: fileURL)
+            } else {
+                extractedText = nil
+            }
+            appState.uploadedResumeFileExtension = fileExtension
             try? await Task.sleep(for: .seconds(1))
 
             appState.extractedResumeText = extractedText
-            appState.resumeReview = await buildReview(from: extractedText, fileExtension: selectedFileURL.pathExtension.lowercased())
+            appState.resumeReview = await buildReview(from: extractedText, fileExtension: fileExtension)
 
             if let extractedText {
                 let lines = nonEmptyTrimmedLines(extractedText)

@@ -46,4 +46,27 @@ final class AppState {
 
     /// True while the "Reach a 100% score" action is running the on-device AI rewrite.
     var isImprovingResume = false
+
+    /// Whether the upload was a photo/screenshot rather than a document. Images reach the app as
+    /// OCR'd text only — there's no document structure to preserve.
+    var uploadedIsImage: Bool {
+        guard let uploadedResumeFileExtension else { return false }
+        return ResumeTextExtraction.isImageFileExtension(uploadedResumeFileExtension)
+    }
+
+    /// Whether "keep the original layout" is even a meaningful choice for this upload. It isn't
+    /// for an image: the "original" is a photo, and handing someone back their own JPEG as the
+    /// finished resume defeats the point of uploading it. Image uploads always go through a
+    /// template, which is the whole reason to convert them to text in the first place.
+    var canKeepOriginalUploadedLayout: Bool {
+        buildSource == .upload && uploadedResumeFileData != nil && !uploadedIsImage
+    }
+
+    /// The effective answer to "should the preview and downloads use the original file's bytes?"
+    /// — the user's choice ANDed with whether that choice is even possible. Consumers should read
+    /// this rather than `keepOriginalUploadedLayout` directly, so a value left over from an
+    /// earlier upload in the same session can't apply itself to an image.
+    var isKeepingOriginalUploadedLayout: Bool {
+        keepOriginalUploadedLayout && canKeepOriginalUploadedLayout
+    }
 }

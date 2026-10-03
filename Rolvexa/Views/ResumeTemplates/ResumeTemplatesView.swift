@@ -84,8 +84,13 @@ struct ResumeTemplatesView: View {
             if selectedTemplateID == nil {
                 selectedTemplateID = templates.first?.id
             }
-            if appState.buildSource == .upload {
+            // Only offered when keeping the original is actually possible. For a photo upload
+            // the "original" is a JPEG, so handing it back as the finished resume would defeat
+            // the point of converting it to text — those go straight to the template picker.
+            if appState.canKeepOriginalUploadedLayout {
                 showUploadChoice = true
+            } else if appState.buildSource == .upload {
+                appState.keepOriginalUploadedLayout = false
             }
         }
     }

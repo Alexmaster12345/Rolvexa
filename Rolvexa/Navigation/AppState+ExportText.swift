@@ -10,7 +10,7 @@ extension AppState {
             // "Keep original layout" downloads bypass this function entirely (they use the
             // original file's exact bytes) — but on the rare path where this text still gets
             // read for that mode, the truly original raw extraction is the faithful answer.
-            if keepOriginalUploadedLayout {
+            if isKeepingOriginalUploadedLayout {
                 return extracted
             }
             // Otherwise ("Replace with Template"): PDF/DOCX text extraction order frequently

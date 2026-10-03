@@ -224,7 +224,7 @@ struct ReviewAndApplyView: View {
             }
 
             if canAutoFix {
-                if appState.keepOriginalUploadedLayout {
+                if appState.isKeepingOriginalUploadedLayout {
                     Text("Using this replaces your kept original file with a regenerated version for downloads — your original design won't be available anymore.")
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -360,7 +360,7 @@ struct ReviewAndApplyView: View {
     }
 
     private var keepsOriginalResumeLayout: Bool {
-        appState.buildSource == .upload && appState.keepOriginalUploadedLayout
+        appState.isKeepingOriginalUploadedLayout
             && appState.uploadedResumeFileData != nil && !appState.resumeTextWasManuallyFixed
     }
 

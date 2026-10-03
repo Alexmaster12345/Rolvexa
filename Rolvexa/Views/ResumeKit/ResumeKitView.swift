@@ -92,7 +92,7 @@ struct ResumeKitView: View {
             .padding(.vertical, 4)
         )
 
-        let keepsOriginal = isResumeTab && appState.buildSource == .upload && appState.keepOriginalUploadedLayout
+        let keepsOriginal = isResumeTab && appState.isKeepingOriginalUploadedLayout
         let originalData = keepsOriginal ? appState.uploadedResumeFileData : nil
         let originalExtension = keepsOriginal ? appState.uploadedResumeFileExtension : nil
         // When "keep original layout" is on, a regenerated file in the *other* format can never
@@ -204,7 +204,7 @@ struct ResumeKitView: View {
         // render as if it were an upload — which showed up as a plain, unstyled resume no matter
         // which template was picked, since that stale state bypassed ResumeTemplateCard entirely.
         if appState.buildSource == .upload,
-           appState.keepOriginalUploadedLayout,
+           appState.isKeepingOriginalUploadedLayout,
            let data = appState.uploadedResumeFileData,
            appState.uploadedResumeFileExtension == "pdf" {
             // The real original PDF, rendered with its actual layout — text extraction alone
@@ -219,7 +219,7 @@ struct ResumeKitView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
         } else if appState.buildSource == .upload,
-                  let extracted = appState.extractedResumeText, !extracted.isEmpty, appState.keepOriginalUploadedLayout {
+                  let extracted = appState.extractedResumeText, !extracted.isEmpty, appState.isKeepingOriginalUploadedLayout {
             // Fallback for formats we can't render visually in-app (e.g. .docx) — at least show
             // the extracted text rather than forcing the styled template on someone who opted out.
             plainOriginalResumeCard(extracted)

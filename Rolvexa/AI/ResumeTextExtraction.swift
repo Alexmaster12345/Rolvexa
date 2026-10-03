@@ -2,20 +2,120 @@ import Foundation
 import PDFKit
 import Vision
 import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
+#if canImport(UIKit)
+import UIKit
+#endif
+
+#if canImport(UIKit)
+private extension UIImage.Orientation {
+    /// `UIImage.Orientation` and `CGImagePropertyOrientation` describe the same eight cases but
+    /// use different raw values, so they can't be bridged by `rawValue` alone.
+    init?(exif: CGImagePropertyOrientation) {
+        switch exif {
+        case .up: self = .up
+        case .upMirrored: self = .upMirrored
+        case .down: self = .down
+        case .downMirrored: self = .downMirrored
+        case .left: self = .left
+        case .leftMirrored: self = .leftMirrored
+        case .right: self = .right
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: return nil
+        }
+    }
+}
+#endif
 
 /// Extracts plain text from an uploaded resume file — fully offline, no network access at any
 /// point. Handles text-based PDFs directly via `PDFKit`, falls back to on-device OCR (`Vision`)
-/// for scanned/image-only PDFs, and reads `.docx` by unzipping its OOXML and stripping markup.
+/// for scanned/image-only PDFs and for photos or screenshots of a resume, and reads `.docx` by
+/// unzipping its OOXML and stripping markup.
 enum ResumeTextExtraction {
+    /// File extensions accepted as an image upload (a photo or screenshot of a resume), which is
+    /// read via OCR rather than by parsing a document format.
+    static let imageFileExtensions: Set<String> = [
+        "jpg", "jpeg", "png", "heic", "heif", "tiff", "tif", "gif", "bmp", "webp"
+    ]
+
+    static func isImageFileExtension(_ fileExtension: String) -> Bool {
+        imageFileExtensions.contains(fileExtension.lowercased())
+    }
+
     static func extractText(from url: URL, fileExtension: String) -> String? {
-        switch fileExtension.lowercased() {
+        let normalized = fileExtension.lowercased()
+        switch normalized {
         case "pdf":
             return extractFromPDF(url: url)
         case "docx":
             return extractFromDOCX(url: url)
         default:
-            return nil
+            return isImageFileExtension(normalized) ? extractFromImage(url: url) : nil
         }
+    }
+
+    // MARK: - Image (OCR)
+
+    /// Reads a photo or screenshot of a resume. Unlike the PDF path there's no selectable-text
+    /// shortcut to try first — OCR is the only option.
+    static func extractFromImage(url: URL) -> String? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return recognizeTextInImage(from: source)
+    }
+
+    /// Same as ``extractFromImage(url:)`` but for image bytes already in memory — used by the
+    /// photo-library path, where there's no file on disk to point at.
+    static func extractFromImageData(_ data: Data) -> String? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return recognizeTextInImage(from: source)
+    }
+
+    private static func recognizeTextInImage(from source: CGImageSource) -> String? {
+        guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let upright = uprightImage(image, orientation: orientation(of: source)) ?? image
+        return recognizeText(in: upright)
+    }
+
+    /// Bakes a photo's EXIF orientation into its pixels so the bitmap is visually upright.
+    ///
+    /// Vision recognizes rotated text perfectly well on its own, so this isn't about accuracy —
+    /// it's about *ordering*. `VNRecognizedTextObservation.boundingBox` is reported in the
+    /// original stored pixel space, not the display-oriented one, so the top-to-bottom sort in
+    /// `recognizeText` runs along the wrong axis for a sideways photo and emits the resume's
+    /// sections in reverse. Normalizing first keeps the bitmap and the bounding boxes in the
+    /// same upright space.
+    private static func uprightImage(
+        _ image: CGImage,
+        orientation: CGImagePropertyOrientation
+    ) -> CGImage? {
+        guard orientation != .up else { return image }
+        #if canImport(UIKit)
+        guard let uiOrientation = UIImage.Orientation(exif: orientation) else { return image }
+        let oriented = UIImage(cgImage: image, scale: 1, orientation: uiOrientation)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let redrawn = UIGraphicsImageRenderer(size: oriented.size, format: format).image { _ in
+            oriented.draw(in: CGRect(origin: .zero, size: oriented.size))
+        }
+        return redrawn.cgImage
+        #else
+        // Non-UIKit platforms keep the original bitmap; ordering may differ for rotated photos.
+        return image
+        #endif
+    }
+
+    /// A photo taken with the camera is very often stored rotated, with an EXIF tag describing
+    /// how to display it. `CGImage` ignores that tag, so handing Vision the raw bitmap of a
+    /// sideways photo yields rotated text and near-zero recognition. Reading the tag and passing
+    /// it through lets Vision correct for it.
+    private static func orientation(of source: CGImageSource) -> CGImagePropertyOrientation {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let raw = properties[kCGImagePropertyOrientation] as? UInt32,
+              let parsed = CGImagePropertyOrientation(rawValue: raw) else {
+            return .up
+        }
+        return parsed
     }
 
     // MARK: - PDF (+ OCR fallback)
@@ -66,18 +166,35 @@ enum ResumeTextExtraction {
         return context.makeImage()
     }
 
-    private static func recognizeText(in image: CGImage) -> String? {
+    private static func recognizeText(
+        in image: CGImage,
+        orientation: CGImagePropertyOrientation = .up
+    ) -> String? {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        let handler = VNImageRequestHandler(cgImage: image, orientation: orientation, options: [:])
         do {
             try handler.perform([request])
         } catch {
             print("[ResumeTextExtraction] OCR failed: \(error)")
             return nil
         }
-        let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        // Vision returns observations in no guaranteed reading order. Sorting top-to-bottom (and
+        // left-to-right within a line) keeps a resume's sections in the order a human sees them,
+        // which everything downstream — section detection, the header/contact parser, the
+        // templated export — assumes. Note `boundingBox` is in Vision's bottom-left origin space,
+        // so a *larger* minY means *higher* on the page.
+        let observations = (request.results ?? []).sorted { lhs, rhs in
+            let lineHeight = max(lhs.boundingBox.height, rhs.boundingBox.height)
+            // Treat observations whose vertical centers are within one line height of each other
+            // as the same visual line, so side-by-side columns don't interleave by a few pixels.
+            if abs(lhs.boundingBox.midY - rhs.boundingBox.midY) > lineHeight * 0.5 {
+                return lhs.boundingBox.midY > rhs.boundingBox.midY
+            }
+            return lhs.boundingBox.minX < rhs.boundingBox.minX
+        }
+        let lines = observations.compactMap { $0.topCandidates(1).first?.string }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
