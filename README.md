@@ -50,6 +50,8 @@ Work in progress survives closing the app, and builds up into a searchable libra
 
 Each record carries its last score stamped with a digest of the text that score was measured on. Edit a bullet and the number disappears from the list rather than lingering next to text it no longer describes.
 
+Any saved resume can be shared straight from the list as PDF or Word, through the same renderers as the in-app download, in that record's own template and with its own photo — so what you send is the document you made, not a second rendering of it. The file is named after you and the role (`Jane-Doe-Operations-Manager.pdf`) rather than `Resume.pdf`. A record holding nothing but a name can't be shared: its share button is disabled, because an empty page should never leave the app looking like a resume.
+
 Where a field is missing, Rolvexa leaves the section out rather than filling it with sample text. A resume that's visibly incomplete is recoverable; one that's confidently wrong about who you are is not.
 
 ## How it works, technically
@@ -189,6 +191,10 @@ earlier debugging dump that wrote OCR output to Documents was removed.
 **On request:** "Export my data" under Legal & Privacy writes every stored resume as
 pretty-printed JSON to the temporary directory, still file-protected, and hands it to the share
 sheet. There is no server to ask for a copy, so the export is simply the files themselves.
+Sharing a single resume works the same way: a file-protected PDF or `.docx` in the temporary
+directory, handed to the system share sheet. Both are deliberate hand-offs — once you pick a
+destination the file travels by whatever route you chose, which the privacy policy says plainly.
+The app's promise is only that it never transmits anything by itself.
 
 **Not protected, by design:** a compromised or jailbroken device; files the user deliberately
 exports and then shares; screenshots; and anything typed into another app. The on-device model
@@ -214,7 +220,7 @@ xcodebuild test -project Rolvexa.xcodeproj -scheme Rolvexa \
 | `DocumentExporterTests` | Content parity across all four templates × PDF and Word, no contact block repeated across pages, `.docx` package validity and image embedding |
 | `ResumePhotoTests` | All eight EXIF orientations, checked against UIKit rather than against hand-reasoned expectations |
 | `ResumeSectionKitTests` | Header detection, section synonyms, keyword extraction and skill mining |
-| `ResumeLibraryTests` | Record round-trip, two resumes staying independent, newest-first ordering, search, a score going quiet once its text changes, migration from the old single-draft file, refusing to persist an untouched form, backup exclusion, one corrupt file not hiding the rest |
+| `ResumeLibraryTests` | Record round-trip, two resumes staying independent, newest-first ordering, search, a score going quiet once its text changes, migration from the old single-draft file, refusing to persist an untouched form, backup exclusion, one corrupt file not hiding the rest, sharing producing a real signed PDF/`.docx` with the candidate's own content, and a name-only record refusing to share at all |
 | `AppleIntelligenceRewriterTests` | That a rewrite never alters a number — skipped automatically on hardware without Apple Intelligence rather than failing |
 
 Orientation and content-parity assertions compare against an independent oracle (UIKit, and the rendered PDF's own extracted text) rather than against expected values written by hand, because those are exactly the places where a wrong expectation looks like a passing test.

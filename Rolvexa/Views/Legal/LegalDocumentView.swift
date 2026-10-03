@@ -86,8 +86,9 @@ struct LegalDocumentView: View {
         """)
 
         section("What this does not protect you from", """
-        A compromised, jailbroken or shared device. Files you export and then send, which travel \
-        by whatever means you choose. Screenshots. Anything you copy into another app.
+        A compromised, jailbroken or shared device. Files you download or share, which travel by \
+        whatever means you choose — the moment you pick a destination in the share sheet, the \
+        file goes wherever you sent it. Screenshots. Anything you copy into another app.
 
         Rolvexa's promise is narrow and checkable: the app itself never transmits your resume. \
         It is not anonymity, and it is not protection from someone holding your unlocked phone.

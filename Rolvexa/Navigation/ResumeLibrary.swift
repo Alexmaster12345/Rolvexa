@@ -42,9 +42,31 @@ enum ResumeLibrary {
         var contentFingerprint: String
         /// The last score this resume was given, if it has ever been scored.
         var score: ScoreStamp?
+        /// The assembled resume text, exactly as the preview and the exporters consume it.
+        ///
+        /// Stored rather than always re-derived because an *uploaded* resume's body doesn't live
+        /// in the structured fields at all — the upload flow fills in a name, a role and skills
+        /// and leaves the employment history in extracted text. Rebuilding from structure alone
+        /// would hand an upload user a page with their name on it and nothing underneath.
+        ///
+        /// Nil for records written before this field existed, and for ones built directly in
+        /// tests; ``shareableBody()`` falls back to the structured assembly in that case.
+        var bodyText: String?
 
         /// Whether ``score`` still describes what's in this resume now.
         var hasCurrentScore: Bool { score?.fingerprint == contentFingerprint }
+
+        /// The text to render when sharing this resume, or nil when there isn't enough here to
+        /// make a document worth sending.
+        func shareableBody() -> String? {
+            if let bodyText, ResumeExportText.hasBodyWorthSharing(bodyText) {
+                return bodyText
+            }
+            guard ResumeExportText.hasShareableContent(experience: experience) else { return nil }
+            return ResumeExportText.fromStructuredInput(
+                experience: experience, jobTarget: jobTarget
+            )
+        }
     }
 
     /// A score, stamped with the content it was measured on.
@@ -69,6 +91,8 @@ enum ResumeLibrary {
         var updatedAt: Date
         /// nil when the resume has never been scored, or has been edited since it was.
         var score: Int?
+        /// Whether this record holds enough to render a document worth sending.
+        var canShare: Bool
         /// Everything the search field matches against, pre-lowercased.
         var haystack: String
 
@@ -257,6 +281,62 @@ enum ResumeLibrary {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    // MARK: - Sharing one resume
+
+    /// Renders a saved resume as a real PDF or Word file, ready to hand to the share sheet.
+    ///
+    /// Goes through the same `PDFDocumentRenderer` / `WordDocumentRenderer` as the in-app
+    /// download, with the record's own template and photo, so a resume shared from the library
+    /// is the same document the user saw when they made it — not a second rendering of it.
+    ///
+    /// Returns nil when the record has nothing worth sending, rather than producing a page with
+    /// a name at the top and nothing under it.
+    static func shareableFile(for id: UUID, format: ExportFormat) -> URL? {
+        guard let resume = load(id: id), let body = resume.shareableBody() else { return nil }
+
+        let data = format == .pdf
+            ? PDFDocumentRenderer.render(
+                title: "Resume", body: body,
+                style: resume.templateStyle, photoData: resume.experience.photoData
+            )
+            : WordDocumentRenderer.render(
+                title: "Resume", body: body,
+                style: resume.templateStyle, photoData: resume.experience.photoData
+            )
+        guard !data.isEmpty else { return nil }
+
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(shareFilename(for: resume)).\(format.fileExtension)")
+        // Protected while it waits in the temporary directory for the share sheet, same as the
+        // record it came from.
+        guard (try? data.write(to: destination, options: [.atomic, .completeFileProtection])) != nil
+        else { return nil }
+        return destination
+    }
+
+    /// "Jane-Doe-Operations-Manager" — recognisable in a recruiter's inbox rather than
+    /// "Resume.pdf" among forty others.
+    static func shareFilename(for resume: SavedResume) -> String {
+        let role = [resume.jobTarget.title, resume.experience.currentRole]
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        let parts = [resume.experience.fullName.trimmingCharacters(in: .whitespaces), role ?? ""]
+            .filter { !$0.isEmpty }
+        let name = parts.isEmpty ? "Resume" : parts.joined(separator: " ")
+
+        // Anything a filesystem or a mail client might choke on becomes a hyphen. Letters from
+        // any script are kept — a Hebrew or Japanese name shouldn't come out as "----".
+        let sanitised = name.unicodeScalars
+            .map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "-" }
+            .reduce(into: "") { result, character in
+                if character == "-" && result.last == "-" { return }
+                result.append(character)
+            }
+        return sanitised.trimmingCharacters(in: CharacterSet(charactersIn: "-")).isEmpty
+            ? "Resume"
+            : String(sanitised.trimmingCharacters(in: CharacterSet(charactersIn: "-")).prefix(60))
+    }
+
     // MARK: - Export
 
     /// Everything the app holds about you, as readable JSON, written somewhere the share sheet
@@ -308,6 +388,10 @@ enum ResumeLibrary {
             contentFingerprint: fingerprint(
                 experience: draft.experience, jobTarget: draft.jobTarget
             )
+            // `bodyText` is left nil on purpose. The old store never persisted an uploaded
+            // resume's extracted text either, so there is nothing to carry across — the
+            // structured fields are all these drafts ever held, and `shareableBody()` rebuilds
+            // from exactly those.
         )
         // Carries the old file's timestamp across rather than taking the default of "now".
         // A resume the user last touched in March shouldn't appear in the library as edited
@@ -340,16 +424,40 @@ enum ResumeLibrary {
     }
 
     /// The reduced shape decoded for the list. See ``summaries()``.
+    ///
+    /// Everything the list needs is here except `photoData`, which is the one field expensive to
+    /// decode — base64 image bytes per row, materialised only to be thrown away.
     private struct SummaryRecord: Decodable {
         struct Experience: Decodable {
             var fullName: String
             var currentRole: String
+            var summary: String
             var skills: [String]
             var positions: [Position]
+            var educationEntries: [Education]
 
             struct Position: Decodable {
                 var title: String
                 var company: String
+                var bullets: [String]
+
+                /// Mirrors `WorkExperienceEntry.isComplete`.
+                var isComplete: Bool {
+                    !title.trimmingCharacters(in: .whitespaces).isEmpty
+                        && !company.trimmingCharacters(in: .whitespaces).isEmpty
+                        && bullets.contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                }
+            }
+
+            struct Education: Decodable {
+                var degree: String
+                var school: String
+
+                /// Mirrors `EducationEntry.isComplete`.
+                var isComplete: Bool {
+                    !degree.trimmingCharacters(in: .whitespaces).isEmpty
+                        && !school.trimmingCharacters(in: .whitespaces).isEmpty
+                }
             }
         }
 
@@ -359,6 +467,7 @@ enum ResumeLibrary {
         var updatedAt: Date
         var contentFingerprint: String
         var score: ScoreStamp?
+        var bodyText: String?
 
         var summary: Summary {
             let role = [jobTarget.title, experience.currentRole, experience.positions.first?.title]
@@ -373,6 +482,15 @@ enum ResumeLibrary {
                 .joined(separator: " ")
                 .lowercased()
 
+            // A name and a job title alone render as a heading with nothing under it. Offering
+            // to share that would let someone send a recruiter an empty page believing it was
+            // their resume.
+            let hasBody = bodyText.map(ResumeExportText.hasBodyWorthSharing) ?? false
+            let hasStructure = experience.positions.contains(where: \.isComplete)
+                || experience.educationEntries.contains(where: \.isComplete)
+                || !experience.skills.isEmpty
+                || !experience.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
             return Summary(
                 id: id,
                 // "Untitled resume" rather than a guess: a resume saved before any role was
@@ -381,6 +499,7 @@ enum ResumeLibrary {
                 subtitle: employer ?? (role == nil ? "" : name),
                 updatedAt: updatedAt,
                 score: score?.fingerprint == contentFingerprint ? score?.value : nil,
+                canShare: hasBody || hasStructure,
                 haystack: haystack
             )
         }

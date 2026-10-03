@@ -76,7 +76,12 @@ final class AppState {
             contentFingerprint: ResumeLibrary.fingerprint(
                 experience: experience, jobTarget: jobTarget
             ),
-            score: currentScore
+            score: currentScore,
+            // Captured here rather than rebuilt when sharing, because an uploaded resume's body
+            // lives in `extractedResumeText` — which isn't persisted — and not in the
+            // structured fields. Without this, sharing an upload from the library would hand
+            // back a page with a name on it and nothing underneath.
+            bodyText: resumeExportText()
         )
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 import Testing
 @testable import Rolvexa
 
@@ -443,6 +444,152 @@ struct ResumeLibraryTests {
             ResumeLibrary.migrateLegacyDraftIfNeeded()
             #expect(ResumeLibrary.isEmpty)
         }
+    }
+
+    // MARK: - Sharing one resume
+
+    @Test("A saved resume renders a real file to share", arguments: [ExportFormat.pdf, .word])
+    func sharedFileIsARealDocument(format: ExportFormat) throws {
+        try withCleanLibrary {
+            let resume = filledResume()
+            #expect(ResumeLibrary.save(resume))
+
+            let url = try #require(ResumeLibrary.shareableFile(for: resume.id, format: format))
+            defer { try? FileManager.default.removeItem(at: url) }
+
+            #expect(url.pathExtension == format.fileExtension)
+            let data = try Data(contentsOf: url)
+            #expect(data.count > 1_000, "a resume should not render to a near-empty file")
+            // Signature check rather than a size heuristic alone: "%PDF" or a zip local header.
+            let magic = Array(data.prefix(4))
+            #expect(
+                format == .pdf
+                    ? magic == Array("%PDF".utf8)
+                    : magic == [0x50, 0x4B, 0x03, 0x04]
+            )
+        }
+    }
+
+    @Test("The shared file carries the candidate's own content, not a template")
+    func sharedPDFContainsTheResume() throws {
+        try withCleanLibrary {
+            let resume = filledResume()
+            #expect(ResumeLibrary.save(resume))
+
+            let url = try #require(ResumeLibrary.shareableFile(for: resume.id, format: .pdf))
+            defer { try? FileManager.default.removeItem(at: url) }
+
+            let document = try #require(PDFDocument(url: url))
+            let text = (0..<document.pageCount)
+                .compactMap { document.page(at: $0)?.string }
+                .joined(separator: "\n")
+
+            #expect(text.contains("Jane Doe"))
+            #expect(text.contains("Acme Corporation"))
+            #expect(text.contains("Cut supplier onboarding time from 14 days to 5"))
+        }
+    }
+
+    @Test("An uploaded resume's body survives into the shared file")
+    func uploadBodyIsSharedRatherThanRebuiltFromEmptyFields() throws {
+        try withCleanLibrary {
+            // What the upload flow actually leaves behind: a name, a role and skills in the
+            // structured fields, and the entire employment history only in the extracted text.
+            var experience = ExperienceInput()
+            experience.fullName = "Jane Doe"
+            experience.currentRole = "Facility Property Manager"
+            experience.skills = ["Vendor Management"]
+
+            var resume = filledResume()
+            resume.experience = experience
+            resume.bodyText = """
+            Jane Doe
+            Facility Property Manager
+
+            PROFESSIONAL EXPERIENCE
+            Facility Property Manager | 2017 – Present
+            Acme Corporation, Anytown USA
+            • Oversaw 12 commercial properties
+            """
+            #expect(ResumeLibrary.save(resume))
+
+            let url = try #require(ResumeLibrary.shareableFile(for: resume.id, format: .pdf))
+            defer { try? FileManager.default.removeItem(at: url) }
+
+            let document = try #require(PDFDocument(url: url))
+            let text = (0..<document.pageCount)
+                .compactMap { document.page(at: $0)?.string }
+                .joined(separator: "\n")
+
+            #expect(
+                text.contains("Oversaw 12 commercial properties"),
+                "rebuilding from the structured fields alone would have lost the whole history"
+            )
+        }
+    }
+
+    @Test("A resume with nothing but a name offers nothing to share")
+    func emptyResumeIsNotShareable() throws {
+        try withCleanLibrary {
+            var experience = ExperienceInput()
+            experience.fullName = "Jane Doe"
+            experience.currentRole = "Operations Manager"
+            let resume = ResumeLibrary.SavedResume(
+                experience: experience,
+                jobTarget: JobTarget(),
+                templateStyle: .modernEdge,
+                createdAt: Date(),
+                updatedAt: Date(),
+                contentFingerprint: ResumeLibrary.fingerprint(
+                    experience: experience, jobTarget: JobTarget()
+                )
+            )
+            #expect(ResumeLibrary.save(resume))
+
+            let summary = try #require(ResumeLibrary.summaries().first)
+            #expect(!summary.canShare, "an empty page must not be offered as a resume")
+            #expect(ResumeLibrary.shareableFile(for: resume.id, format: .pdf) == nil)
+        }
+    }
+
+    @Test("A resume with real content is offered for sharing")
+    func filledResumeIsShareable() throws {
+        try withCleanLibrary {
+            #expect(ResumeLibrary.save(filledResume()))
+            let summary = try #require(ResumeLibrary.summaries().first)
+            #expect(summary.canShare)
+        }
+    }
+
+    @Test("Sharing a resume that no longer exists returns nothing rather than an empty file")
+    func sharingADeletedResumeIsNil() {
+        withCleanLibrary {
+            #expect(ResumeLibrary.shareableFile(for: UUID(), format: .pdf) == nil)
+        }
+    }
+
+    @Test("The shared file is named after the person and the role")
+    func shareFilenameIsRecognisable() {
+        let resume = filledResume(role: "Operations Manager")
+        #expect(ResumeLibrary.shareFilename(for: resume) == "Jane-Doe-Senior-Operations-Manager")
+    }
+
+    @Test("A name in a non-Latin script survives the filename, rather than becoming hyphens")
+    func shareFilenameKeepsNonLatinNames() {
+        var resume = filledResume()
+        resume.experience.fullName = "ישראל ישראלי"
+        resume.jobTarget.title = ""
+        resume.experience.currentRole = ""
+        #expect(ResumeLibrary.shareFilename(for: resume) == "ישראל-ישראלי")
+    }
+
+    @Test("A resume with no name still gets a usable filename")
+    func shareFilenameFallsBack() {
+        var resume = filledResume()
+        resume.experience.fullName = ""
+        resume.experience.currentRole = ""
+        resume.jobTarget.title = ""
+        #expect(ResumeLibrary.shareFilename(for: resume) == "Resume")
     }
 
     // MARK: - Export

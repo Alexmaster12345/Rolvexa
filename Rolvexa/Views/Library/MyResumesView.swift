@@ -22,6 +22,8 @@ struct MyResumesView: View {
     @State private var summaries: [ResumeLibrary.Summary] = []
     @State private var query = ""
     @State private var pendingDeletion: ResumeLibrary.Summary?
+    @State private var shareURL: URL?
+    @State private var shareFailureMessage: String?
 
     private var visible: [ResumeLibrary.Summary] {
         summaries.filter { $0.matches(query) }
@@ -55,6 +57,25 @@ struct MyResumesView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .onAppear { summaries = ResumeLibrary.summaries() }
+        .sheet(isPresented: Binding(
+            get: { shareURL != nil },
+            set: { if !$0 { shareURL = nil } }
+        )) {
+            if let shareURL {
+                ShareSheet(items: [shareURL])
+            }
+        }
+        .alert(
+            "Couldn't share this resume",
+            isPresented: Binding(
+                get: { shareFailureMessage != nil },
+                set: { if !$0 { shareFailureMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(shareFailureMessage ?? "")
+        }
         .confirmationDialog(
             pendingDeletion.map { "Delete \"\($0.title)\"?" } ?? "Delete this resume?",
             isPresented: Binding(
@@ -140,6 +161,8 @@ struct MyResumesView: View {
 
                     Spacer()
 
+                    shareControl(for: summary)
+
                     Button {
                         pendingDeletion = summary
                     } label: {
@@ -162,6 +185,61 @@ struct MyResumesView: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    /// Share as PDF or Word, straight from the list — the two formats the rest of the app
+    /// exports, rendered by the same renderers so a shared resume matches the downloaded one.
+    ///
+    /// Disabled, with a reason, when the record holds nothing but a name: sharing that would
+    /// send a recruiter an empty page.
+    @ViewBuilder
+    private func shareControl(for summary: ResumeLibrary.Summary) -> some View {
+        if summary.canShare {
+            Menu {
+                ForEach(ExportFormat.allCases, id: \.fileExtension) { format in
+                    Button {
+                        share(summary, as: format)
+                    } label: {
+                        Label(
+                            format == .pdf ? "Share as PDF" : "Share as Word",
+                            systemImage: format.icon
+                        )
+                    }
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.caption)
+                    .foregroundStyle(Color.indigo)
+                    .padding(6)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Share \(summary.title)")
+        } else {
+            // A disabled Button rather than a dimmed Image: an Image gets folded into the
+            // surrounding card's accessibility label ("Sam Taylor, Edited 15 seconds ago, Share
+            // Sam Taylor"), which reads as though the card itself shares. A button stays its
+            // own element, is announced as unavailable, and keeps its hint.
+            Button {} label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.caption)
+                    .padding(6)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(true)
+            .foregroundStyle(.tertiary)
+            .accessibilityLabel("Share \(summary.title)")
+            .accessibilityHint("Unavailable until this resume has some content")
+        }
+    }
+
+    private func share(_ summary: ResumeLibrary.Summary, as format: ExportFormat) {
+        guard let url = ResumeLibrary.shareableFile(for: summary.id, format: format) else {
+            // Rendering failing is rare, but saying nothing would look like a dead button.
+            shareFailureMessage = "This resume couldn't be prepared for sharing. Open it, check it still has content, and try again."
+            return
+        }
+        shareURL = url
     }
 
     private func scoreChip(_ score: Int) -> some View {

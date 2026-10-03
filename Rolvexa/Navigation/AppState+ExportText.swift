@@ -21,95 +21,20 @@ extension AppState {
             // templated. Rebuild it in the same sane order the in-app preview already uses.
             return structuredUploadExportText(rawExtracted: extracted)
         }
-        // No invented stand-ins for missing values.
-        //
-        // This branch isn't only reached by the validated write-from-scratch form: an upload
-        // whose text extraction returns nil falls through to here too (the Review screen shows
-        // "We couldn't read this file" but still lets you continue). With sample defaults in
-        // place that produced a complete, confident resume for a fictional "Jamie Chen, Product
-        // Designer" — a fabricated document under the user's own download button. An empty
-        // section is a far better failure than a convincing wrong one.
-        let name = experience.fullName.isEmpty
-            ? (uploadedFileName ?? "Your Resume")
-            : experience.fullName
-        let role = experience.currentRole
-        let skills = experience.skills.joined(separator: ", ")
-        let summary = resolvedSummary(role: role, skills: skills)
-        // Profile links sit in the contact line, which every template renders as the CONTACT
-        // block — the same shape the upload flow produces.
-        let contactLine = ([experience.email, experience.phone, experience.location] + experience.links)
-            .filter { !$0.isEmpty }
-            .joined(separator: " | ")
-
-        var lines: [String] = [name]
-        if !role.isEmpty { lines.append(role) }
-        if !contactLine.isEmpty { lines.append(contactLine) }
-        lines.append("")
-        // "ABOUT ME" rather than "SUMMARY" to match the heading every `ResumeTemplateCard`
-        // layout shows on screen. `ResumeSectionKit.standardSectionKeywords` already lists
-        // "ABOUTME" under Summary, so section-completeness scoring is unaffected.
-        if let summary {
-            lines.append("ABOUT ME")
-            lines.append(summary)
-        }
-
-        // Experience before skills, matching the card. The sidebar and banner layouts hoist
-        // SKILLS into their coloured region regardless, so this only changes the single-column
-        // templates — which are exactly the ones that disagreed with the preview.
-        //
-        // Each job prints as heading / employer / bullets, with a blank line between jobs, so the
-        // exported PROFESSIONAL EXPERIENCE section matches what a real resume template shows
-        // rather than collapsing into one paragraph.
-        let positions = experience.completedPositions
-        if !positions.isEmpty {
-            lines.append("")
-            lines.append("PROFESSIONAL EXPERIENCE")
-            for (index, position) in positions.enumerated() {
-                if index > 0 { lines.append("") }
-                lines.append(position.headingLine)
-                if !position.employerLine.isEmpty { lines.append(position.employerLine) }
-                lines.append(contentsOf: position.filledBullets.map { "• \($0)" })
-            }
-        }
-
-        if !skills.isEmpty {
-            lines.append("")
-            lines.append("SKILLS")
-            lines.append(skills)
-        }
-
-        let education = experience.completedEducation
-        if !education.isEmpty {
-            lines.append("")
-            lines.append("EDUCATION")
-            for (index, entry) in education.enumerated() {
-                if index > 0 { lines.append("") }
-                lines.append(contentsOf: entry.displayLines)
-            }
-        }
-
-        return lines.joined(separator: "\n")
-    }
-
-    /// Precedence for the "About me" paragraph: what the user wrote, else what the AI pass
-    /// produced, else a sentence generated from the role and skills.
-    ///
-    /// Returns nil when there's nothing truthful to build it from, so the caller drops the
-    /// section rather than printing a sentence about an unnamed role and no skills.
-    private func resolvedSummary(role: String, skills: String) -> String? {
-        let written = experience.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !written.isEmpty { return written }
-        if let aiGeneratedSummary { return aiGeneratedSummary }
-        guard !role.isEmpty, !skills.isEmpty else { return nil }
-        return "\(role) with \(experience.yearsOfExperience) of experience, skilled in \(skills). Seeking to bring this expertise to \(targetRoleAtCompany)."
+        // The structured assembly lives in `ResumeExportText` so the library can produce the
+        // identical document for a saved resume without a live `AppState` — two renderers for
+        // the same resume would eventually disagree about it.
+        return ResumeExportText.fromStructuredInput(
+            experience: experience,
+            jobTarget: jobTarget,
+            aiSummary: aiGeneratedSummary,
+            fallbackName: uploadedFileName
+        )
     }
 
     /// "the Facility Manager role at Acme", or a neutral fallback when no target was entered.
     var targetRoleAtCompany: String {
-        let company = jobTarget.company.isEmpty ? "your company" : jobTarget.company
-        // "this role" already reads as a full phrase on its own — appending the literal word
-        // "role" after it (as the non-empty-title branch needs) would read "this role role".
-        return jobTarget.title.isEmpty ? "this role at \(company)" : "the \(jobTarget.title) role at \(company)"
+        ResumeExportText.targetRoleAtCompany(jobTarget)
     }
 
     /// Reassembles an uploaded resume's extracted text into the same sane order the in-app
