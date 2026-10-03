@@ -2,7 +2,16 @@
 
 <img src="screenshots/splash-screen.png" alt="Rolvexa splash screen" width="180" />
 
-**Your AI copilot for landing the job.** Rolvexa is an iOS app that reviews, builds, and tailors resumes and cover letters — entirely on-device, with no cloud AI and no network access at any point.
+**An offline resume parser, analyser and document generator for iOS.** Rolvexa reads a resume from a PDF, a Word file or a photo, scores it, compares it against a job posting, and regenerates it as a styled PDF or Word document — entirely on-device, with no cloud AI and no network access at any point.
+
+### What's interesting under the hood
+
+- **Reading-order reconstruction.** Recursive XY-cut page segmentation over Vision OCR output, so a two-column or sidebar resume extracts in the order a person reads it rather than the order the OCR engine emits. Choosing the split axis by recursion depth matters: the gutter *inside* a job entry is wider than the gap *between* two jobs, so "widest gap wins" cuts in the wrong place.
+- **Documents written from primitives.** PDFs are drawn with CoreText/CoreGraphics; `.docx` files are hand-authored OOXML packed by a ZIP writer with its own CRC-32, down to an embedded JPEG cropped to a circle by a DrawingML shape preset. No document libraries.
+- **Explainable scoring.** Job fit is set arithmetic you can argue with, not a generated number — every percentage traces back to a count of matched and missing terms, and a dimension the posting is silent about is dropped rather than guessed at.
+- **Deterministic first, model second.** The on-device language model only ever rephrases, behind a check that rejects any rewrite altering a number. Spelling and grammar never touch it: a rules engine can't autocorrect someone's surname into a different word.
+
+**114 tests · no third-party dependencies · no network calls · ~7.7k lines of Swift**
 
 ## What it does
 
@@ -27,9 +36,10 @@ Where a field is missing, Rolvexa leaves the section out rather than filling it 
 
 Everything runs locally on the device — no cloud AI, no API keys, no network calls:
 
-- **Text extraction** from uploaded files: `PDFKit` for text-based PDFs, a minimal in-house zip reader for DOCX, and `Vision` OCR for photos, screenshots, and scanned image-only PDFs. Photos are normalized upright first (a camera photo stores its rotation in an EXIF tag, and Vision reports text positions in the *stored* pixel space — without normalizing, a sideways photo's sections come out in reverse order).
+- **Text extraction** from uploaded files: `PDFKit` for text-based PDFs, a minimal in-house zip reader (with `Compression` for inflate) for DOCX, and `Vision` OCR for photos, screenshots, and scanned image-only PDFs. Photos are normalized upright first — a camera photo stores its rotation in an EXIF tag, and Vision reports text positions in the *stored* pixel space, so without normalizing, a sideways photo's sections come out in reverse order.
+- **Reading order** is rebuilt by recursively bisecting the page along the widest text-free band, alternating axis by depth: a column split at the top level, then row splits within each column. A flat "widest gap wins" rule fails on real resumes, because the gutter between an employer and its bullet list is wider than the gap separating two jobs.
 - **Scoring and suggestions** via `NaturalLanguage` tokenization, the system spell checker (`UITextChecker`), and deterministic heuristics.
-- **Job-fit matching** is set arithmetic over a skill vocabulary, weighted across four dimensions, with any dimension the posting is silent about dropped and its weight redistributed. Deliberately not a language model: a match percentage someone's application depends on has to be explainable line by line, and term matching can show its working. Matching is whole-token, so "R" doesn't match *Paris* and a posting asking for C++ doesn't also register a requirement for C.
+- **Job-fit matching** weights four dimensions — technical skills (50), recurring terms (25), seniority (15), education (10) — and redistributes the weight of any the posting doesn't mention. Matching is whole-token, so "R" doesn't match *Paris*; `+` and `#` count as token continuations so a posting asking for C++ doesn't also register a requirement for C, while "AWS." at a sentence end still matches. A posting with no recognisable requirement returns no analysis at all rather than a confident 0%.
 - **"Fix It For Me"** layers Apple Intelligence's on-device system model — via the [Foundation Models](https://developer.apple.com/documentation/foundationmodels) framework, using `@Generable` guided generation so the response is a guaranteed-shape Swift type rather than parsed free text — on top of the deterministic fixes.
 - **Export generation** is written from first principles. PDFs are drawn with CoreText/CoreGraphics (US Letter, multi-page, circular photo via an ellipse clip). `.docx` files are hand-written OOXML packed into a hand-rolled ZIP container, with the headshot embedded as a JPEG part and cropped to a circle by a DrawingML `ellipse` preset. Headshots are normalized through all eight EXIF orientations and centre-cropped square before either renderer sees them.
 - Built with **SwiftUI**. No third-party package dependencies.
