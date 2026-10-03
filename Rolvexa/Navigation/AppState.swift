@@ -47,6 +47,44 @@ final class AppState {
         )
     }
 
+    // MARK: - Draft persistence
+
+    /// The parts of this state worth surviving app termination.
+    var currentDraft: ResumeDraftStore.Draft {
+        ResumeDraftStore.Draft(
+            experience: experience,
+            jobTarget: jobTarget,
+            templateStyle: selectedResumeTemplateStyle,
+            savedAt: Date()
+        )
+    }
+
+    /// Persists the in-progress resume. Called when the app leaves the foreground rather than on
+    /// every keystroke — the save is cheap but a resume is sensitive enough that writing it to
+    /// disk on each character typed is more exposure than the feature needs.
+    func saveDraft() {
+        ResumeDraftStore.save(currentDraft)
+    }
+
+    /// Restores a saved draft, if one exists and the user hasn't already started entering data
+    /// in this session.
+    @discardableResult
+    func restoreDraftIfAvailable() -> Bool {
+        guard ResumeDraftStore.isWorthSaving(currentDraft) == false,
+              let draft = ResumeDraftStore.load() else { return false }
+        experience = draft.experience
+        jobTarget = draft.jobTarget
+        selectedResumeTemplateStyle = draft.templateStyle
+        return true
+    }
+
+    /// Forgets the saved resume entirely — both in memory and on disk.
+    func discardDraft() {
+        ResumeDraftStore.clear()
+        experience = ExperienceInput()
+        jobTarget = JobTarget()
+    }
+
     /// Set only when the on-device AI agent (ResumeIntelligenceAgent) successfully generated
     /// real, tailored copy. Nil means "fall back to the deterministic template" — either the
     /// agent isn't available on this device, or the call failed.

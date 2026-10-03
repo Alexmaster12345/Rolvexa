@@ -126,6 +126,9 @@ struct ResumeReviewView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Overall resume score, \(review.overallScore) percent")
+        .accessibilityValue("Good, a few tweaks needed. \(review.suggestions.count) suggestions to boost your score.")
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.indigo.opacity(0.06)))
     }
@@ -149,6 +152,9 @@ struct ResumeReviewView: View {
                     ProgressView(value: Double(item.percent), total: 100)
                         .tint(item.percent < 70 ? .orange : .indigo)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(item.title)
+                .accessibilityValue("\(item.percent) percent")
             }
         }
     }

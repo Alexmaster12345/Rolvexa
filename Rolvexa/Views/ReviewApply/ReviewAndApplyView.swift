@@ -93,6 +93,7 @@ struct ReviewAndApplyView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                 }
+                .accessibilityLabel("Back")
             }
             ToolbarItem(placement: .appTrailing) {
                 Button {
@@ -101,6 +102,7 @@ struct ReviewAndApplyView: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
+                .accessibilityLabel("Close and start over")
             }
         }
         .alert("Application submitted", isPresented: $didSubmit) {

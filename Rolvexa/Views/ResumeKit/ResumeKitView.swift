@@ -203,6 +203,7 @@ struct ResumeKitView: View {
                 Text("\(percent)%").font(.title3.bold())
             }
             .frame(width: 84, height: 84)
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(caption).font(.caption.bold()).foregroundStyle(.secondary)
@@ -210,6 +211,11 @@ struct ResumeKitView: View {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
         }
+        // Spoken as one sentence. Left as separate elements VoiceOver read the ring, the
+        // caption, the headline and the detail as four disconnected fragments.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(caption), \(percent) percent")
+        .accessibilityValue("\(headline). \(detail)")
     }
 
     private func skillChips(title: String, items: [String], tint: Color) -> some View {

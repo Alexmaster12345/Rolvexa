@@ -1,6 +1,6 @@
 import Foundation
 
-enum JobLevel: String, CaseIterable, Identifiable {
+enum JobLevel: String, CaseIterable, Identifiable, Codable {
     case entry = "Entry"
     case mid = "Mid"
     case senior = "Senior"
@@ -9,7 +9,7 @@ enum JobLevel: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct JobTarget {
+struct JobTarget: Codable {
     var descriptionText: String = ""
     var title: String = ""
     var company: String = ""
@@ -23,7 +23,7 @@ struct JobTarget {
 /// paragraph under EXPERIENCE with no employer, no dates and no bullets — the biggest structural
 /// gap between a generated resume and a real one, and the part recruiters and ATS parsers read
 /// most closely.
-struct WorkExperienceEntry: Identifiable, Hashable {
+struct WorkExperienceEntry: Identifiable, Hashable, Codable {
     var id = UUID()
     var title: String = ""
     var company: String = ""
@@ -71,7 +71,7 @@ struct WorkExperienceEntry: Identifiable, Hashable {
 
 /// One school, structured the way resume templates print it: degree, then school and location,
 /// then the graduation date.
-struct EducationEntry: Identifiable, Hashable {
+struct EducationEntry: Identifiable, Hashable, Codable {
     var id = UUID()
     var degree: String = ""
     var school: String = ""
@@ -96,7 +96,7 @@ struct EducationEntry: Identifiable, Hashable {
     }
 }
 
-struct ExperienceInput {
+struct ExperienceInput: Codable {
     var fullName: String = ""
     var currentRole: String = ""
     var yearsOfExperience: String = "5–7 years"
@@ -227,7 +227,7 @@ enum BuildSource {
 }
 
 /// Which visual layout the generated resume uses — picked on the "Choose Template" screen.
-enum ResumeTemplateStyle {
+enum ResumeTemplateStyle: String, Codable {
     case modernEdge
     case minimalPro
     case creativeBold

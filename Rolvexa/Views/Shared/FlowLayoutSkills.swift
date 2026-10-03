@@ -55,6 +55,7 @@ struct FlowLayoutSkills: View {
                         onRemove(skill)
                     } label: {
                         Image(systemName: "xmark")
+                            .accessibilityHidden(true)
                             .font(.caption2)
                     }
                 }

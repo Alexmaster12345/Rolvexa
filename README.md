@@ -25,7 +25,7 @@ The download isn't a re-flowed approximation of that preview. Both are built fro
 - **Explainable scoring.** Job fit is set arithmetic you can argue with, not a generated number — every percentage traces back to a count of matched and missing terms, and a dimension the posting is silent about is dropped rather than guessed at.
 - **Deterministic first, model second.** The on-device language model only ever rephrases, behind a check that rejects any rewrite altering a number. Spelling and grammar never touch it: a rules engine can't autocorrect someone's surname into a different word.
 
-**114 tests · no third-party dependencies · no network calls · ~7.7k lines of Swift**
+**132 tests · no third-party dependencies · no network calls · ~8k lines of Swift**
 
 ## What it does
 
@@ -43,6 +43,8 @@ From there, Rolvexa:
 - Suggests other job titles you're a good fit for, based on your skills.
 - Generates a tailored cover letter and a job-fit analysis alongside your resume.
 - Exports everything as PDF or Word, ready to send — matching the on-screen preview section for section, including the contact icons, the photo, and a coloured sidebar that runs the full height of every page.
+
+Work in progress survives closing the app. The draft is kept in Application Support rather than Documents, written with complete file protection so iOS keeps it encrypted while the device is locked, and excluded from iCloud and iTunes backups — a resume shouldn't leave the device through a backup when the app promises it won't leave at all. Discarding it deletes the file.
 
 Where a field is missing, Rolvexa leaves the section out rather than filling it with sample text. A resume that's visibly incomplete is recoverable; one that's confidently wrong about who you are is not.
 
@@ -69,6 +71,16 @@ Apple Intelligence requires capable hardware (A17 Pro or newer). The app checks 
 
 Spelling and grammar deliberately stay on the deterministic path even where the model is available — a rules engine can't "autocorrect" someone's surname into a different word, which is exactly the kind of silent corruption a resume can't tolerate.
 
+A rewrite is only accepted if every digit in the original survives it. In practice:
+
+```
+in  → Responsible for managing the deployment pipeline and helped with
+      reducing release times by 40%.
+out → Led deployment pipeline management and reduced release times by 40%.
+```
+
+Weak phrasing replaced, the 40% untouched. Any output that drops or changes a number is discarded and the original kept.
+
 ## Tests
 
 ```
@@ -76,7 +88,7 @@ xcodebuild test -project Rolvexa.xcodeproj -scheme Rolvexa \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-114 tests ([Swift Testing](https://developer.apple.com/documentation/testing)) over the deterministic core — the parts where a silent mistake reaches the user's actual resume:
+132 tests ([Swift Testing](https://developer.apple.com/documentation/testing)) over the deterministic core — the parts where a silent mistake reaches the user's actual resume:
 
 | Suite | Covers |
 |---|---|
@@ -85,6 +97,8 @@ xcodebuild test -project Rolvexa.xcodeproj -scheme Rolvexa \
 | `DocumentExporterTests` | Content parity across all four templates × PDF and Word, no contact block repeated across pages, `.docx` package validity and image embedding |
 | `ResumePhotoTests` | All eight EXIF orientations, checked against UIKit rather than against hand-reasoned expectations |
 | `ResumeSectionKitTests` | Header detection, section synonyms, keyword extraction and skill mining |
+| `ResumeDraftStoreTests` | Draft round-trip, refusing to persist an untouched form, backup exclusion, recovery from a corrupt file |
+| `AppleIntelligenceRewriterTests` | That a rewrite never alters a number — skipped automatically on hardware without Apple Intelligence rather than failing |
 
 Orientation and content-parity assertions compare against an independent oracle (UIKit, and the rendered PDF's own extracted text) rather than against expected values written by hand, because those are exactly the places where a wrong expectation looks like a passing test.
 

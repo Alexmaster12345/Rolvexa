@@ -117,6 +117,7 @@ struct InputExperienceView: View {
                     } label: {
                         Image(systemName: "chevron.up")
                     }
+                    .accessibilityLabel("Previous field")
                     .disabled(focusedField == orderedFields.first)
 
                     Button {
@@ -124,6 +125,7 @@ struct InputExperienceView: View {
                     } label: {
                         Image(systemName: "chevron.down")
                     }
+                    .accessibilityLabel("Next field")
                     .disabled(focusedField == orderedFields.last)
 
                     Spacer()
@@ -411,6 +413,7 @@ struct InputExperienceView: View {
                         Image(systemName: "trash")
                     }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("Delete this job")
                 }
             }
 
@@ -461,6 +464,7 @@ struct InputExperienceView: View {
                             Image(systemName: "minus.circle")
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityLabel("Remove this bullet")
                     }
                 }
             }
@@ -516,6 +520,7 @@ struct InputExperienceView: View {
                         Image(systemName: "trash")
                     }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("Delete this qualification")
                 }
             }
 
