@@ -167,37 +167,10 @@ nonisolated enum JobFitAnalyzer {
         )
     }
 
-    /// Characters that continue a technology name rather than ending it.
-    ///
-    /// Alphanumerics plus `+` and `#`, so "C" doesn't match inside "C++" or "C#" — otherwise a
-    /// posting asking for C++ registered a requirement for C as well, and the resume's own "C++"
-    /// then satisfied both, inflating the match. `.` and `/` are deliberately excluded: they end
-    /// sentences and separate words far more often than they appear mid-token, and treating them
-    /// as continuations would stop "AWS" matching "…deployed on AWS."
-    private static func continuesToken(_ character: Character) -> Bool {
-        character.isLetter || character.isNumber || character == "+" || character == "#"
-    }
-
-    /// Whole-term containment.
-    ///
-    /// A plain `contains` would match "R" inside "Paris" and "Go" inside "Google", so each edge
-    /// of the term must sit against a token boundary — but only where that edge is itself
-    /// part of a token, so "C++", "CI/CD" and "Node.js" still match their own punctuation.
+    /// Whole-term containment — see `ResumeSectionKit.containsWholeTerm`, which skill mining
+    /// uses too. Keeping one implementation means "R" can't match *Paris* in one place and not
+    /// the other.
     private static func contains(_ term: String, in haystack: String) -> Bool {
-        let needle = term.lowercased()
-        guard !needle.isEmpty else { return false }
-        let checkLeading = needle.first.map(continuesToken) ?? false
-        let checkTrailing = needle.last.map(continuesToken) ?? false
-
-        var searchStart = haystack.startIndex
-        while let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
-            let leadingOK = !checkLeading || range.lowerBound == haystack.startIndex
-                || !continuesToken(haystack[haystack.index(before: range.lowerBound)])
-            let trailingOK = !checkTrailing || range.upperBound == haystack.endIndex
-                || !continuesToken(haystack[range.upperBound])
-            if leadingOK && trailingOK { return true }
-            searchStart = haystack.index(after: range.lowerBound)
-        }
-        return false
+        ResumeSectionKit.containsWholeTerm(term, in: haystack)
     }
 }

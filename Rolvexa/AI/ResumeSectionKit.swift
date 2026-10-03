@@ -12,18 +12,80 @@ nonisolated enum ResumeSectionKit {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard trimmed.count >= 3, trimmed.count <= 32 else { return false }
         guard trimmed.contains(where: { $0.isLetter }) else { return false }
+
+        // Hebrew, Arabic, CJK, Thai and other caseless scripts satisfy
+        // `trimmed == trimmed.uppercased()` unconditionally, so the all-caps test classified
+        // *every* short line of a Hebrew resume as a heading — the candidate's name, the
+        // employer line, even bullet text. `detectedSections` then found no standard sections at
+        // all and the scorer docked 8 points for each one it thought was missing.
+        //
+        // Where there's no case to read, a line is a heading only if it matches the known
+        // section vocabulary below.
+        let hasCasedLetters = trimmed.contains { $0.lowercased() != $0.uppercased() }
+        guard hasCasedLetters else { return matchesStandardSectionName(trimmed) }
+
         return trimmed == trimmed.uppercased()
+    }
+
+    /// Whether a line names one of the standard resume sections, in any supported language.
+    static func matchesStandardSectionName(_ line: String) -> Bool {
+        !sections(named: line).isEmpty
+    }
+
+    private static func sections(named line: String) -> Set<String> {
+        // Letter-spaced headings ("E D U C A T I O N") survive extraction as literal spaces, so
+        // they're compacted out before matching.
+        let compact = line.uppercased().replacingOccurrences(of: " ", with: "")
+        var found: Set<String> = []
+        for (section, keywords) in standardSectionKeywords where keywords.contains(where: compact.contains) {
+            found.insert(section)
+        }
+        return found
+    }
+
+    /// Whole-token containment, shared by skill mining and job-fit matching.
+    ///
+    /// A plain `contains` matches "C" inside "Charge" and "R" inside "Registered", which put
+    /// those two on the skills list of every resume that had no explicit skills section — a
+    /// nurse's resume came back claiming C and R. Each edge of the term must sit against a token
+    /// boundary, but only where that edge is itself part of a token, so "C++", "CI/CD" and
+    /// "Node.js" still match their own punctuation. `+` and `#` count as continuations so "C"
+    /// doesn't match inside "C++".
+    static func containsWholeTerm(_ term: String, in haystack: String) -> Bool {
+        let needle = term.lowercased()
+        guard !needle.isEmpty else { return false }
+
+        func continuesToken(_ character: Character) -> Bool {
+            character.isLetter || character.isNumber || character == "+" || character == "#"
+        }
+
+        let checkLeading = needle.first.map(continuesToken) ?? false
+        let checkTrailing = needle.last.map(continuesToken) ?? false
+
+        var searchStart = haystack.startIndex
+        while let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
+            let leadingOK = !checkLeading || range.lowerBound == haystack.startIndex
+                || !continuesToken(haystack[haystack.index(before: range.lowerBound)])
+            let trailingOK = !checkTrailing || range.upperBound == haystack.endIndex
+                || !continuesToken(haystack[range.upperBound])
+            if leadingOK && trailingOK { return true }
+            searchStart = haystack.index(after: range.lowerBound)
+        }
+        return false
     }
 
     /// Standard resume section names mapped to the header keywords (already whitespace-compact
     /// and uppercased) that identify them — covers the common synonyms real resumes use.
+    /// Hebrew headings are listed beside the English ones rather than handled separately: a
+    /// resume written in Israel is routinely bilingual, with Hebrew prose and English
+    /// technology names in the same document.
     static let standardSectionKeywords: [String: [String]] = [
-        "Summary": ["SUMMARY", "PROFILE", "OBJECTIVE", "ABOUTME"],
-        "Experience": ["EXPERIENCE", "EMPLOYMENT", "WORKHISTORY"],
-        "Education": ["EDUCATION", "ACADEMIC"],
-        "Skills": ["SKILL", "COMPETENC"],
-        "Certifications": ["CERTIFICATION", "LICENSE"],
-        "Projects": ["PROJECT"]
+        "Summary": ["SUMMARY", "PROFILE", "OBJECTIVE", "ABOUTME", "תקציר", "אודות", "פרופיל"],
+        "Experience": ["EXPERIENCE", "EMPLOYMENT", "WORKHISTORY", "ניסיון", "תעסוקה", "תעסוקתי"],
+        "Education": ["EDUCATION", "ACADEMIC", "השכלה", "לימודים"],
+        "Skills": ["SKILL", "COMPETENC", "כישורים", "מיומנויות"],
+        "Certifications": ["CERTIFICATION", "LICENSE", "תעודות", "הסמכות"],
+        "Projects": ["PROJECT", "פרויקטים"]
     ]
 
     /// Which of the standard resume sections this text appears to have, based on header lines
@@ -31,13 +93,7 @@ nonisolated enum ResumeSectionKit {
     static func detectedSections(in text: String) -> Set<String> {
         var found: Set<String> = []
         for line in text.components(separatedBy: .newlines) where isSectionHeader(line) {
-            // Many resume templates render section headers with letter-spacing (e.g.
-            // "E D U C A T I O N"), which PDF/OCR text extraction reproduces as literal space
-            // characters between every letter — compact those out before matching.
-            let compact = line.uppercased().replacingOccurrences(of: " ", with: "")
-            for (section, keywords) in standardSectionKeywords where keywords.contains(where: compact.contains) {
-                found.insert(section)
-            }
+            found.formUnion(sections(named: line))
         }
         return found
     }
@@ -143,7 +199,7 @@ nonisolated enum ResumeSectionKit {
         let lowercasedText = text.lowercased()
         var found: [String] = []
         for keyword in knownSkillKeywords {
-            guard lowercasedText.contains(keyword.lowercased()) else { continue }
+            guard containsWholeTerm(keyword, in: lowercasedText) else { continue }
             found.append(keyword)
             if found.count >= 10 { break }
         }
