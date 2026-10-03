@@ -37,6 +37,16 @@
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
+/* Begin PBXContainerItemProxy section */
+		87FCB69030716297002F1CA4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000100000000;
+			remoteInfo = Rolvexa;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -108,6 +118,9 @@
 			);
 			buildRules = (
 			);
+			dependencies = (
+				87FCB69130716297002F1CA4 /* PBXTargetDependency */,
+			);
 			fileSystemSynchronizedGroups = (
 				87FCB68430716297002F1CA4 /* RolvexaTests */,
 			);
@@ -117,6 +130,14 @@
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		87FCB69130716297002F1CA4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000100000000 /* Rolvexa */;
+			targetProxy = 87FCB69030716297002F1CA4 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		000000000000000000000000 /* Project object */ = {

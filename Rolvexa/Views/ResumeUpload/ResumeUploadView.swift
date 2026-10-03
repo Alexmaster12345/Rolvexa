@@ -584,41 +584,6 @@ struct ResumeUploadView: View {
         return "This DOCX file's contents couldn't be read — please try a PDF instead."
     }
 
-    /// TEMPORARY DIAGNOSTIC — remove once the upload parsing is confirmed on real resumes.
-    ///
-    /// Dumps the raw OCR text and every field parsed out of it to the app's Documents folder so
-    /// it can be pulled off the device with `devicectl device copy from`. Reproducing a
-    /// photographed resume's exact OCR output from a synthetic test image has proved unreliable,
-    /// and the remaining parsing bugs depend on exactly what Vision reads.
-    private func writeDiagnosticDump(rawOCR: String) {
-        let dump = """
-        ===== RAW OCR TEXT =====
-        \(rawOCR)
-
-        ===== PARSED FIELDS =====
-        fullName   : \(appState.experience.fullName)
-        currentRole: \(appState.experience.currentRole)
-        email      : \(appState.extractedEmail ?? "nil")
-        phone      : \(appState.extractedPhone ?? "nil")
-        location   : \(appState.extractedLocation ?? "nil")
-        summary    : \(appState.extractedSummary ?? "nil")
-        company    : \(appState.extractedCompany ?? "nil")
-        links      : \(appState.extractedLinks)
-        education  : \(appState.extractedEducation ?? "nil")
-        skills     : \(appState.experience.skills)
-
-        ===== BODY AFTER HEADER STRIP =====
-        \(appState.extractedResumeDisplayText ?? "nil")
-
-        ===== FINAL EXPORT TEXT =====
-        \(appState.resumeExportText())
-        """
-        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let url = directory.appendingPathComponent("rolvexa-diagnostic.txt")
-        try? dump.write(to: url, atomically: true, encoding: .utf8)
-        print("[Diagnostic] wrote \(dump.count) bytes to \(url.path)")
-    }
-
     private func buildReview(from text: String?, fileExtension: String) async -> ResumeReview {
         guard let text else {
             return ResumeReview(
@@ -732,7 +697,6 @@ struct ResumeUploadView: View {
                     appState.experience.currentRole = title
                 }
                 appState.extractedCompany = recentPosition.company
-                writeDiagnosticDump(rawOCR: extractedText)
             } else {
                 appState.experience.fullName = guessedName(fromText: nil, filename: selectedFileName, excludingLocation: nil)
             }

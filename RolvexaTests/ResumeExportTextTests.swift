@@ -67,7 +67,7 @@ struct ResumeExportTextTests {
     @Test("Profile links join the contact line")
     func linksAppearInContactLine() {
         let text = Self.filledWriteFlowState().resumeExportText()
-        let contactLine = try? #require(text.components(separatedBy: "\n").first { $0.contains("@") })
+        let contactLine = text.components(separatedBy: "\n").first { $0.contains("@") }
         #expect(contactLine?.contains("linkedin.com/in/priyasingh") == true)
     }
 

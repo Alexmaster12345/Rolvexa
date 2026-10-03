@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 ///
 /// Uses ImageIO/CoreGraphics rather than UIKit so the same code serves the SwiftUI preview and
 /// the PDF/Word exporters, which are deliberately UIKit-free (see `PDFDocumentRenderer`).
-enum ResumePhoto {
+nonisolated enum ResumePhoto {
     /// Longest edge of the stored image. The photo prints at about one inch, so anything larger
     /// is wasted bytes in every exported file — and the `.docx` writer stores entries
     /// uncompressed, which makes an unresized camera image especially expensive.

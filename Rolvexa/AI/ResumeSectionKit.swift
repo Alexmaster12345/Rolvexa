@@ -5,7 +5,7 @@ import NaturalLanguage
 /// body extraction, and skill/keyword mining. Runs entirely on-device via simple string
 /// heuristics and the `NaturalLanguage` framework's tokenizer/tagger — no network access, no
 /// bundled language model, ever.
-enum ResumeSectionKit {
+nonisolated enum ResumeSectionKit {
     /// A short, all-caps line with at least one letter (e.g. "SUMMARY", "EXPERIENCE") — the
     /// header style used by the overwhelming majority of resume templates.
     static func isSectionHeader(_ line: String) -> Bool {

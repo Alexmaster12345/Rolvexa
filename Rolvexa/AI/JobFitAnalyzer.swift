@@ -8,7 +8,7 @@ import Foundation
 ///
 /// Before this existed the UI showed a "Job Fit Score" that was really the resume *quality*
 /// score, computed without ever reading a job description.
-enum JobFitAnalyzer {
+nonisolated enum JobFitAnalyzer {
     /// Weights per dimension. A dimension the posting says nothing about contributes nothing and
     /// its weight is redistributed across the rest — a job that lists no degree requirement
     /// shouldn't quietly dock someone for not having one.

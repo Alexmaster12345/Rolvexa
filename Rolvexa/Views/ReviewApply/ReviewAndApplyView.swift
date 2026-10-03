@@ -51,7 +51,7 @@ struct ReviewAndApplyView: View {
                     includesPhoto: true
                 )
                 kitRow(icon: "envelope.fill", title: "Cover Letter", subtitle: "Tailored & ready", baseFilename: "CoverLetter", documentTitle: "Cover Letter", exportText: appState.coverLetterExportText, format: nil)
-                kitRow(icon: "chart.bar.fill", title: jobFitRowTitle, subtitle: jobFitRowSubtitle, baseFilename: "JobFitAnalysis", documentTitle: jobFitRowTitle, exportText: appState.jobFitExportText, format: nil)
+                jobFitKitRow
 
                 Button {
                     submit()
@@ -118,15 +118,26 @@ struct ReviewAndApplyView: View {
 
     /// The row only promises a "job fit analysis" when a job description was actually supplied;
     /// otherwise it's a resume report, and says so.
-    private var jobFitRowTitle: String {
-        appState.jobFitAnalysis == nil ? "Resume Report" : "Job Fit Analysis"
-    }
+    ///
+    /// `jobFitAnalysis` recomputes on every read (~1.3 ms — it rebuilds the export text and
+    /// re-runs the match), and SwiftUI may evaluate a body several times per interaction. Read
+    /// once here rather than from separate title and subtitle properties, which doubled the work
+    /// for a single row.
+    private var jobFitKitRow: some View {
+        let fit = appState.jobFitAnalysis
+        let title = fit == nil ? "Resume Report" : "Job Fit Analysis"
+        let subtitle = fit.map { "\($0.overallScore)% match — \($0.summaryLabel.lowercased())" }
+            ?? "\(appState.applicationKit?.resumeScore ?? 0)% resume score"
 
-    private var jobFitRowSubtitle: String {
-        if let fit = appState.jobFitAnalysis {
-            return "\(fit.overallScore)% match — \(fit.summaryLabel.lowercased())"
-        }
-        return "\(appState.applicationKit?.resumeScore ?? 0)% resume score"
+        return kitRow(
+            icon: "chart.bar.fill",
+            title: title,
+            subtitle: subtitle,
+            baseFilename: "JobFitAnalysis",
+            documentTitle: title,
+            exportText: appState.jobFitExportText,
+            format: nil
+        )
     }
 
     /// Falls back to the resume's own last/current position when no job target title was
