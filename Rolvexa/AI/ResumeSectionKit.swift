@@ -150,6 +150,84 @@ enum ResumeSectionKit {
         return found
     }
 
+    // MARK: - Header de-duplication
+
+    /// Strips the header block — name, role, contact details, summary — out of a resume body.
+    ///
+    /// Both the in-app preview (`ResumeTemplateCard`) and the templated export print that block
+    /// themselves, as a structured header, so any copy still sitting in the body text renders a
+    /// second time. Filtering is done by *content* rather than by line position, because the
+    /// header doesn't reliably land in one contiguous run at the top: PDF and OCR extraction
+    /// order often doesn't match visual order, and multi-column layouts can repeat the name in a
+    /// sidebar or profile card.
+    static func removingHeaderBlock(
+        from text: String,
+        name: String,
+        role: String,
+        summary: String,
+        email: String?,
+        phone: String?,
+        location: String?
+    ) -> String {
+        let exactMatches: Set<String> = Set(
+            ([name, role, summary] + [email, phone, location].compactMap { $0 })
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        )
+
+        // A short, digit-free line starting with the first name is almost always a second
+        // rendering of the name (a sidebar profile card, a page header), which an exact match
+        // can't catch when the surname extracted slightly differently.
+        let nameFirstWord = name.split(separator: " ").first.map(String.init) ?? ""
+        func looksLikeDuplicateNameLine(_ trimmed: String) -> Bool {
+            guard !nameFirstWord.isEmpty, trimmed.hasPrefix(nameFirstWord) else { return false }
+            let words = trimmed.split(separator: " ")
+            return words.count <= 4 && !trimmed.contains(where: \.isNumber)
+        }
+
+        let filtered = text.components(separatedBy: .newlines).filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if exactMatches.contains(trimmed) { return false }
+            // A combined "phone | email | location" line never equals any single field, and the
+            // fields can appear in any order — the email is unique enough that any line
+            // containing it is virtually always the contact line.
+            if let email, !email.isEmpty, trimmed.contains(email) { return false }
+            if let phone, !phone.isEmpty, trimmed.contains(phone) { return false }
+            if looksLikeDuplicateNameLine(trimmed) { return false }
+            return true
+        }
+
+        // The summary can reappear wrapped across several lines, so no single line equals it.
+        // Greedily grow a window of consecutive lines and drop the whole run once it
+        // reconstructs a meaningful chunk of the summary.
+        var deduped: [String] = []
+        var index = 0
+        while index < filtered.count {
+            if !summary.isEmpty {
+                var window = ""
+                var lookahead = index
+                while lookahead < filtered.count {
+                    let candidate = filtered[lookahead].trimmingCharacters(in: .whitespaces)
+                    guard !candidate.isEmpty else { break }
+                    let grown = window.isEmpty ? candidate : window + " " + candidate
+                    guard summary.contains(grown) else { break }
+                    window = grown
+                    lookahead += 1
+                }
+                if window.count >= min(summary.count, 60) {
+                    index = lookahead
+                    continue
+                }
+            }
+            deduped.append(filtered[index])
+            index += 1
+        }
+
+        return removeDanglingHeaders(deduped)
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Most recent position
 
     /// Best-effort (title, company) for the first entry under the resume's "Experience" section

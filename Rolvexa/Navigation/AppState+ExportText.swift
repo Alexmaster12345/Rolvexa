@@ -58,80 +58,18 @@ extension AppState {
         let contactLine = [extractedEmail, extractedPhone, extractedLocation].compactMap { $0 }.joined(separator: " | ")
         let summary = extractedSummary ?? ""
 
-        // `extractedResumeDisplayText` is SUPPOSED to already have the header block (name/role/
-        // contact/summary) stripped out from wherever it landed in the raw extraction — but that
-        // stripping only fires when a "phone | email | location"-style contact line was
-        // successfully detected upstream, which isn't guaranteed for every resume's exact
-        // formatting. Rather than trust that silently, filter the body by content directly, so
-        // the block this function is about to print up top can never also survive somewhere
-        // in the middle of the body — regardless of whether the upstream detection worked.
-        let linesToExclude: Set<String> = Set(
-            ([name, role, summary] + [extractedEmail, extractedPhone, extractedLocation].compactMap { $0 })
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
+        // Re-filter by content even though `extractedResumeDisplayText` should already be
+        // stripped: that upstream pass can only remove what it recognized, so anything it missed
+        // would print once in the header block below and again in the body.
+        let cleanedBody = ResumeSectionKit.removingHeaderBlock(
+            from: extractedResumeDisplayText ?? rawExtracted,
+            name: name,
+            role: role,
+            summary: summary,
+            email: extractedEmail,
+            phone: extractedPhone,
+            location: extractedLocation
         )
-
-        // A single first-name match on a short, sentence-free line is a strong signal of a
-        // duplicate name occurrence (some multi-column/sidebar resume layouts render the
-        // candidate's name a second time — e.g. a small profile card — which PDF text
-        // extraction reproduces as a completely separate line elsewhere, sometimes with a
-        // slightly different OCR-like rendering of the surname). An exact-string match against
-        // `name` alone can't catch that, since the text genuinely differs.
-        let nameFirstWord = name.split(separator: " ").first.map(String.init) ?? ""
-
-        func looksLikeDuplicateNameLine(_ trimmed: String) -> Bool {
-            guard !nameFirstWord.isEmpty, trimmed.hasPrefix(nameFirstWord) else { return false }
-            let words = trimmed.split(separator: " ")
-            return words.count <= 4 && !trimmed.contains(where: \.isNumber)
-        }
-
-        let bodySource = extractedResumeDisplayText ?? rawExtracted
-        let rawBodyLines = bodySource.components(separatedBy: .newlines)
-        let lineFilteredBodyLines = rawBodyLines.filter { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if linesToExclude.contains(trimmed) { return false }
-            // The individual-field check above misses a combined "phone | email | location"
-            // line (the whole line never exactly equals any one field) — the resume's original
-            // contact line can appear in a different field order than the `contactLine` string
-            // built above, so anchor on the email alone: it's unique enough that any line
-            // containing it is virtually always the contact line, regardless of field order.
-            if let email = extractedEmail, !email.isEmpty, trimmed.contains(email) { return false }
-            if looksLikeDuplicateNameLine(trimmed) { return false }
-            return true
-        }
-        // The summary itself can reappear wrapped across several separate lines (rather than
-        // one line matching `summary` verbatim) — a per-line exact/substring check above can't
-        // catch that, since no single line equals the whole joined summary. Greedily grow a
-        // window of consecutive lines and drop the whole window once it reconstructs a
-        // meaningful chunk of the summary text.
-        var dedupedBodyLines: [String] = []
-        var index = 0
-        while index < lineFilteredBodyLines.count {
-            if !summary.isEmpty {
-                // Grows the window for as long as it keeps matching a substring of the summary
-                // — stopping early at the first line that no longer fits would leave the rest
-                // of that same duplicate block behind uncollapsed.
-                var window = ""
-                var lookahead = index
-                while lookahead < lineFilteredBodyLines.count {
-                    let candidateLine = lineFilteredBodyLines[lookahead].trimmingCharacters(in: .whitespaces)
-                    guard !candidateLine.isEmpty else { break }
-                    let candidateWindow = window.isEmpty ? candidateLine : window + " " + candidateLine
-                    guard summary.contains(candidateWindow) else { break }
-                    window = candidateWindow
-                    lookahead += 1
-                }
-                if window.count >= min(summary.count, 60) {
-                    index = lookahead
-                    continue
-                }
-            }
-            dedupedBodyLines.append(lineFilteredBodyLines[index])
-            index += 1
-        }
-        let cleanedBody = ResumeSectionKit.removeDanglingHeaders(dedupedBodyLines)
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         var lines: [String] = [name]
         if !role.isEmpty {

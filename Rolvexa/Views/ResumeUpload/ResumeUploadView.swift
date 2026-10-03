@@ -530,31 +530,40 @@ struct ResumeUploadView: View {
 
                     let summaryResult = extractSummary(afterContactLineIndex: pipeContact.lineIndex, in: lines)
                     appState.extractedSummary = summaryResult?.text
-
-                    // The name/title/contact/summary block is already shown as the structured
-                    // header + "About Me" section above, so strip it out of the raw preview text
-                    // below — otherwise the same content shows up twice.
-                    let blockStart = [nameIndex, titleIndex, pipeContact.lineIndex].filter { $0 >= 0 }.min() ?? pipeContact.lineIndex
-                    let blockEnd = summaryResult?.endIndex ?? pipeContact.lineIndex
-                    appState.extractedResumeDisplayText = lines
-                        .enumerated()
-                        .filter { $0.offset < blockStart || $0.offset > blockEnd }
-                        .map(\.element)
-                        .joined(separator: "\n")
                 } else {
                     let location = extractLocation(from: extractedText)
                     appState.experience.fullName = guessedName(fromText: extractedText, filename: selectedFileName, excludingLocation: location)
                     appState.extractedEmail = extractEmail(from: extractedText)
                     appState.extractedPhone = extractPhone(from: extractedText)
                     appState.extractedLocation = location
-                    appState.extractedResumeDisplayText = extractedText
                 }
+
+                // Strip the name/role/contact/summary block out of the body text, regardless of
+                // which detection branch ran above. The preview and the templated export both
+                // render that block themselves as a structured header, so anything left in the
+                // body shows up a second time. This previously only happened when a pipe-style
+                // contact line was found, which left every other layout — and most OCR'd photos
+                // — showing the name, email and phone twice.
+                appState.extractedResumeDisplayText = ResumeSectionKit.removingHeaderBlock(
+                    from: extractedText,
+                    name: appState.experience.fullName,
+                    role: appState.experience.currentRole,
+                    summary: appState.extractedSummary ?? "",
+                    email: appState.extractedEmail,
+                    phone: appState.extractedPhone,
+                    location: appState.extractedLocation
+                )
 
                 appState.extractedEducation = extractEducation(from: extractedText)
                 appState.experience.skills = ResumeSectionKit.extractSkills(from: extractedText)
 
                 // Falls back to the Experience section's most recent entry when the near-contact-
                 // line heuristic above didn't find a title (e.g. no pipe-separated contact line).
+                //
+                // Deliberately runs *after* the header strip above: a role recovered from the
+                // Experience section is a real body line describing a job, not a header subtitle,
+                // so it must stay in the body. Only a role found next to the contact line (the
+                // pipe branch, which sets it before the strip) gets removed.
                 let recentPosition = ResumeSectionKit.extractMostRecentPosition(from: extractedText)
                 if appState.experience.currentRole.isEmpty, let title = recentPosition.title {
                     appState.experience.currentRole = title
