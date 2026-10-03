@@ -180,22 +180,90 @@ enum ResumeTextExtraction {
             print("[ResumeTextExtraction] OCR failed: \(error)")
             return nil
         }
-        // Vision returns observations in no guaranteed reading order. Sorting top-to-bottom (and
-        // left-to-right within a line) keeps a resume's sections in the order a human sees them,
-        // which everything downstream — section detection, the header/contact parser, the
-        // templated export — assumes. Note `boundingBox` is in Vision's bottom-left origin space,
-        // so a *larger* minY means *higher* on the page.
-        let observations = (request.results ?? []).sorted { lhs, rhs in
+        let lines = readingOrder(request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// Vision returns observations in no guaranteed order, so they're sorted into the order a
+    /// human reads them. Everything downstream — section detection, the header/contact parser,
+    /// the templated export — assumes visual order.
+    ///
+    /// Resumes very often use a narrow sidebar beside a wide main column. Sorting those purely
+    /// top-to-bottom interleaves the two ("CONTACT / ELLIOT ALDERSON / elliot@… / Highly skilled
+    /// Linux Administrator…"), which scrambles every section. So a vertical gutter is detected
+    /// first and each column is read out whole, left to right.
+    private static func readingOrder(
+        _ observations: [VNRecognizedTextObservation]
+    ) -> [VNRecognizedTextObservation] {
+        guard let split = columnSplit(in: observations) else {
+            return sortedTopToBottom(observations)
+        }
+        let left = observations.filter { $0.boundingBox.midX < split }
+        let right = observations.filter { $0.boundingBox.midX >= split }
+        return sortedTopToBottom(left) + sortedTopToBottom(right)
+    }
+
+    private static func sortedTopToBottom(
+        _ observations: [VNRecognizedTextObservation]
+    ) -> [VNRecognizedTextObservation] {
+        observations.sorted { lhs, rhs in
             let lineHeight = max(lhs.boundingBox.height, rhs.boundingBox.height)
-            // Treat observations whose vertical centers are within one line height of each other
-            // as the same visual line, so side-by-side columns don't interleave by a few pixels.
+            // Observations whose vertical centers are within half a line height of each other are
+            // the same visual line, so they read left-to-right rather than by a few stray pixels.
+            // Note `boundingBox` uses Vision's bottom-left origin: a *larger* midY is *higher*.
             if abs(lhs.boundingBox.midY - rhs.boundingBox.midY) > lineHeight * 0.5 {
                 return lhs.boundingBox.midY > rhs.boundingBox.midY
             }
             return lhs.boundingBox.minX < rhs.boundingBox.minX
         }
-        let lines = observations.compactMap { $0.topCandidates(1).first?.string }
-        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// Finds the x position of a vertical gutter separating two columns, or nil for a
+    /// single-column page.
+    ///
+    /// Deliberately conservative — a false positive would split a normal single-column resume in
+    /// half, which is far worse than leaving a two-column one interleaved. It requires a genuinely
+    /// empty vertical band of real width with a substantial share of the text on both sides.
+    private static func columnSplit(in observations: [VNRecognizedTextObservation]) -> CGFloat? {
+        guard observations.count >= 8 else { return nil }
+
+        // A handful of boxes may legitimately cross any candidate line (a full-width title, an
+        // OCR box that merged across the gutter), so a few crossings are tolerated rather than
+        // disqualifying a split outright.
+        let crossingBudget = max(1, observations.count / 20)
+        let minimumPerColumn = max(2, observations.count / 5)
+
+        // Collect every vertical band that is effectively free of text.
+        var gaps: [(start: CGFloat, end: CGFloat)] = []
+        var runStart: CGFloat?
+        let step: CGFloat = 0.01
+        var x: CGFloat = 0.12
+        while x <= 0.88 {
+            let crossings = observations.filter { $0.boundingBox.minX < x && $0.boundingBox.maxX > x }.count
+            if crossings <= crossingBudget {
+                if runStart == nil { runStart = x }
+            } else if let start = runStart {
+                gaps.append((start, x - step))
+                runStart = nil
+            }
+            x += step
+        }
+        if let start = runStart { gaps.append((start, 0.88)) }
+
+        // Crucially, the *widest* gap is usually not the gutter — it is the ragged right margin
+        // past the end of the longest line, which separates nothing. Only gaps that put a real
+        // share of the text on both sides are true gutters, so candidates are filtered on that
+        // first and the widest is chosen from whatever survives.
+        let candidates: [(center: CGFloat, width: CGFloat)] = gaps.compactMap { gap in
+            let width = gap.end - gap.start
+            guard width >= 0.04 else { return nil }
+            let center = (gap.start + gap.end) / 2
+            let left = observations.filter { $0.boundingBox.midX < center }.count
+            let right = observations.count - left
+            guard left >= minimumPerColumn, right >= minimumPerColumn else { return nil }
+            return (center, width)
+        }
+        return candidates.max { $0.width < $1.width }?.center
     }
 
     // MARK: - DOCX

@@ -185,6 +185,15 @@ enum ResumeSectionKit {
             return words.count <= 4 && !trimmed.contains(where: \.isNumber)
         }
 
+        /// A line that is nothing but an email address (optionally behind a short label such as
+        /// "Email:"), as opposed to prose that happens to mention one.
+        func isStandaloneEmailLine(_ trimmed: String) -> Bool {
+            guard trimmed.contains("@"), trimmed.count <= 60 else { return false }
+            let words = trimmed.split(separator: " ")
+            guard words.count <= 2 else { return false }
+            return words.contains { $0.contains("@") && $0.contains(".") }
+        }
+
         let filtered = text.components(separatedBy: .newlines).filter { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if exactMatches.contains(trimmed) { return false }
@@ -194,6 +203,12 @@ enum ResumeSectionKit {
             if let email, !email.isEmpty, trimmed.contains(email) { return false }
             if let phone, !phone.isEmpty, trimmed.contains(phone) { return false }
             if looksLikeDuplicateNameLine(trimmed) { return false }
+            // An exact match misses OCR near-misses: a photographed resume's sidebar can read
+            // back as "ellit.alderson@fsociety.com" while the structured header holds the
+            // correctly-read "elliot.alderson@fsociety.com", leaving the address printed twice.
+            // Any short line that is essentially just an address is the contact email again —
+            // the header already carries it, so it never needs to appear in the body.
+            if email != nil, isStandaloneEmailLine(trimmed) { return false }
             return true
         }
 
