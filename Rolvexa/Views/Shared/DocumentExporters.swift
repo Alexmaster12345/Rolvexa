@@ -460,6 +460,19 @@ enum WordDocumentRenderer {
 
     // MARK: - Flowing layout (Minimal Pro, Executive Suite)
 
+    /// Explicit US Letter page size with 1" margins.
+    ///
+    /// An empty `<w:sectPr/>` makes Word fall back to whatever its own default template says,
+    /// which is A4 in most of the world. The layout tables below are hardcoded to 9360 twips —
+    /// exactly Letter's 12240 minus two 1" margins — so on an A4 default (content width ~9026
+    /// twips) the table overflows the right margin and the resume renders off the page. Stating
+    /// the geometry makes the output identical everywhere, and matches `PDFDocumentRenderer`,
+    /// which already hardcodes 612×792pt (Letter).
+    private static let sectionProperties = """
+    <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" \
+    w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>
+    """
+
     private static func flowingDocumentXML(title: String, body: String, style: ResumeTemplateStyle) -> String {
         let font = style.usesSerifFont ? "Times New Roman" : "Calibri"
         // `title` is a generic document-type label ("Resume", "Cover Letter"), not the
@@ -487,7 +500,7 @@ enum WordDocumentRenderer {
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-        <w:body>\(paragraphs)<w:sectPr/></w:body>
+        <w:body>\(paragraphs)\(sectionProperties)</w:body>
         </w:document>
         """
     }
@@ -535,7 +548,7 @@ enum WordDocumentRenderer {
         </w:tr>
         </w:tbl>
         <w:p/>
-        <w:sectPr/>
+        \(sectionProperties)
         </w:body>
         </w:document>
         """
@@ -574,7 +587,7 @@ enum WordDocumentRenderer {
         </w:tbl>
         <w:p/>
         \(mainContent)
-        <w:sectPr/>
+        \(sectionProperties)
         </w:body>
         </w:document>
         """
