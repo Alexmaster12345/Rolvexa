@@ -12,9 +12,9 @@ enum ResumeAnalysisError: Error {
 /// A fully offline resume-analysis engine: no cloud AI, no external AI APIs, no network access
 /// at any point. Scoring and spelling/grammar detection run synchronously on-device using the
 /// system spell checker (`UITextChecker`, iOS only) plus `NaturalLanguage` tokenization (via
-/// `ResumeSectionKit`) and deterministic heuristics. ``improveResume`` additionally calls the
-/// bundled on-device model (see `OnDeviceResumeRewriter`) to rephrase bullet lines when it's
-/// present in the app bundle — everything still runs on-device with no network access.
+/// `ResumeSectionKit`) and deterministic heuristics. ``improveResume`` additionally calls Apple
+/// Intelligence's on-device system model (see `AppleIntelligenceResumeRewriter`) to rephrase
+/// prose, when the hardware supports it — everything still runs on-device, no network access.
 enum ResumeAnalysisEngine {
     static let isAvailable = true
     static let unavailableReason: String? = nil
@@ -220,6 +220,15 @@ enum ResumeAnalysisEngine {
 
         for (word, suggestion) in spellingIssues(in: resumeText) {
             guard let suggestion, suggestion.lowercased() != word.lowercased() else { continue }
+            // Never silently rewrite a capitalized word, even one the checker is confident about.
+            // `isLikelyProperNoun` (used when *flagging*) deliberately allows line-initial
+            // capitals through, since a sentence's first word is capitalized by grammar rather
+            // than because it's a name — but that leaves real proper nouns that happen to start
+            // a line unprotected, and the checker will happily "correct" them: a SKILLS line
+            // reading "Figma, User Research" became "Sigma, User Research". On a resume,
+            // corrupting a tool name or a surname is far worse than leaving a capitalized typo
+            // in place, and the user still sees it listed under suggestions either way.
+            guard word.first?.isUppercase != true else { continue }
             improved = replaceWholeWord(word, with: suggestion, in: improved)
         }
 
@@ -250,17 +259,17 @@ enum ResumeAnalysisEngine {
         if normalizedForComparison(applySafeFixes(to: resumeText)) != normalizedForComparison(resumeText) {
             return true
         }
-        // The bundled on-device model (see OnDeviceResumeRewriter) can still rephrase bullets or
+        // Apple Intelligence (see AppleIntelligenceResumeRewriter) can still rephrase bullets or
         // a plain paragraph — but only when at least one *current* suggestion is actually a
         // phrasing issue. If every remaining suggestion is a content/structure gap, no rewrite
         // (AI or deterministic) can move the score, so claiming "fixable" here would just set up
         // the same guaranteed "Couldn't fix resume" failure this check exists to prevent.
         let hasPhrasingIssue = suggestionTitles.contains { !contentGapSuggestionTitles.contains($0) }
-        return OnDeviceResumeRewriter.isBundled && hasPhrasingIssue
+        return AppleIntelligenceResumeRewriter.isAvailable && hasPhrasingIssue
             && !resumeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Applies deterministic safe fixes plus, when the on-device model is bundled, its rewrite —
+    /// Applies deterministic safe fixes plus, when Apple Intelligence is available, its rewrite —
     /// with no score-based accept/reject gating. Use this directly (instead of ``improveResume``)
     /// when `resumeText` is only a *fragment* of the document being scored elsewhere (e.g. just
     /// the work-history paragraph in the "write from scratch" flow) — a fragment's isolated score
@@ -268,7 +277,7 @@ enum ResumeAnalysisEngine {
     /// against a rescore of the full assembled document, not here.
     static func applyFixes(to resumeText: String) async throws -> String {
         var improved = applySafeFixes(to: resumeText)
-        if OnDeviceResumeRewriter.isBundled {
+        if AppleIntelligenceResumeRewriter.isAvailable {
             improved = await applyOnDeviceBulletRewrite(to: improved)
         }
         guard normalizedForComparison(improved) != normalizedForComparison(resumeText) else {
@@ -301,14 +310,14 @@ enum ResumeAnalysisEngine {
 
     /// Runs bullet lines (or, for text with no bullets at all — e.g. the plain work-history
     /// paragraph in the "write from scratch" flow — the whole passage as one unit) through the
-    /// bundled on-device model (see ``OnDeviceResumeRewriter``) for punchier phrasing. By this
-    /// point in ``applyFixes``, `applySafeFixes` has already normalized every bullet marker to
-    /// "•", so that prefix reliably identifies bullet lines here. Anything the model fails to
-    /// load or rewrite safely for is left untouched.
+    /// on-device system model (see ``AppleIntelligenceResumeRewriter``) for punchier phrasing. By
+    /// this point in ``applyFixes``, `applySafeFixes` has already normalized every bullet marker
+    /// to "•", so that prefix reliably identifies bullet lines here. Anything the model fails to
+    /// rewrite safely is left untouched.
     private static func applyOnDeviceBulletRewrite(to text: String) async -> String {
         let lines = text.components(separatedBy: "\n")
         guard lines.contains(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("• ") }) else {
-            guard let rewritten = try? await OnDeviceResumeRewriter.shared.rewrite(passage: text) else {
+            guard let rewritten = try? await AppleIntelligenceResumeRewriter.shared.rewrite(passage: text) else {
                 return text
             }
             return rewritten
@@ -322,7 +331,7 @@ enum ResumeAnalysisEngine {
             }
             let leadingWhitespace = line.prefix(line.count - trimmed.count)
             let bulletBody = String(trimmed.dropFirst(2))
-            if let rewritten = try? await OnDeviceResumeRewriter.shared.rewrite(bulletLine: bulletBody) {
+            if let rewritten = try? await AppleIntelligenceResumeRewriter.shared.rewrite(bulletLine: bulletBody) {
                 rewrittenLines.append("\(leadingWhitespace)• \(rewritten)")
             } else {
                 rewrittenLines.append(line)

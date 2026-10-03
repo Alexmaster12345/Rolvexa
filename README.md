@@ -15,27 +15,33 @@ From there, Rolvexa:
 
 - Picks a professional template (Modern Edge, Minimal Pro, Creative Bold, Executive Suite) — or keeps your uploaded file's original layout untouched if you'd rather not restyle it.
 - Scores your resume and flags issues: spelling, weak passive phrasing ("responsible for" → "Led"), repeated words, missing sections, missing quantifiable metrics, and more.
-- **"Fix It For Me"** — applies safe, deterministic fixes automatically, and can call a small bundled on-device language model to rewrite bullet points and paragraphs for punchier phrasing (never inventing facts, numbers, or achievements that aren't already there).
+- **"Fix It For Me"** — applies safe, deterministic fixes automatically, and on Apple Intelligence devices also rewrites bullet points and paragraphs for punchier phrasing (never inventing facts, numbers, or achievements that aren't already there).
 - Suggests other job titles you're a good fit for, based on your skills.
 - Generates a tailored cover letter and a job-fit analysis alongside your resume.
 - Exports everything as PDF or Word, ready to send.
 
 ## How it works, technically
 
-Everything runs locally on the device:
+Everything runs locally on the device — no cloud AI, no API keys, no network calls:
 
-- **Text extraction** from uploaded PDF/DOCX files.
-- **Scoring and suggestions** via `NaturalLanguage` tokenization, the system spell checker (`UITextChecker`), and deterministic heuristics — no network calls.
-- **"Fix It For Me"** layers a bundled 4-bit-quantized Llama-3.2-1B-Instruct model (via Apple's [MLX](https://github.com/ml-explore/mlx-swift) framework) on top of the deterministic fixes, for phrasing rewrites beyond simple word-swaps.
-- Built with **SwiftUI**, targeting iOS.
+- **Text extraction** from uploaded PDF/DOCX files (DOCX via a minimal in-house zip reader, no third-party dependencies).
+- **Scoring and suggestions** via `NaturalLanguage` tokenization, the system spell checker (`UITextChecker`), and deterministic heuristics.
+- **"Fix It For Me"** layers Apple Intelligence's on-device system model — via the [Foundation Models](https://developer.apple.com/documentation/foundationmodels) framework, using `@Generable` guided generation so the response is a guaranteed-shape Swift type rather than parsed free text — on top of the deterministic fixes.
+- Built with **SwiftUI**. No third-party package dependencies.
+
+### Graceful degradation
+
+Apple Intelligence requires capable hardware (A17 Pro or newer). The app checks `SystemLanguageModel.availability` and tiers accordingly:
+
+| Tier | Devices | Capability |
+|---|---|---|
+| Apple Intelligence | iPhone 15 Pro and newer | Full phrasing rewrites + all of the below |
+| Deterministic engine | **All supported devices** | Spelling, weak-verb fixes, scoring, structure analysis |
+
+Spelling and grammar deliberately stay on the deterministic path even where the model is available — a rules engine can't "autocorrect" someone's surname into a different word, which is exactly the kind of silent corruption a resume can't tolerate.
 
 ## Setup
 
-The on-device model weights (~680MB) aren't committed to this repo — GitHub blocks files over 100MB. To run the AI rewrite feature locally, download the model into `Rolvexa/Resources/ResumeRewriteModel/`:
+Open `Rolvexa.xcodeproj` in Xcode and build. Nothing else to configure — no model weights to download, no dependencies to resolve.
 
-```
-mlx-community/Llama-3.2-1B-Instruct-4bit
-```
-(available on Hugging Face) — grab `config.json`, `model.safetensors`, `model.safetensors.index.json`, `special_tokens_map.json`, `tokenizer.json`, and `tokenizer_config.json`.
-
-Everything else works out of the box by opening `Rolvexa.xcodeproj` in Xcode.
+Minimum deployment target is iOS 18. The Foundation Models code path is gated behind `if #available(iOS 26, *)` and an availability check, so it compiles and runs fine on older systems — it just falls back to the deterministic engine there.

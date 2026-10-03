@@ -91,7 +91,10 @@ struct ResumeReviewView: View {
                 appState.aiReviewedThisSession = true
             }
             withAnimation { fixProgress = 1.0 }
-            try? await Task.sleep(for: .milliseconds(250))
+            // A fix that resolves in a handful of milliseconds (e.g. when the on-device model
+            // isn't engaged) could otherwise dismiss the overlay before SwiftUI ever renders a
+            // visible frame of it. This guarantees it's actually seen.
+            try? await Task.sleep(for: .milliseconds(700))
             isFixing = false
             router.push(.resumeTemplates)
         }

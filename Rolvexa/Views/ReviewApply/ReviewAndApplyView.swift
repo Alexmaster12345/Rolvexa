@@ -261,6 +261,13 @@ struct ReviewAndApplyView: View {
             ResumeAnalysisEngine.GrammarSuggestionItem(title: $0.title, detail: $0.detail)
         }
 
+        // Deferred until after the minimum-display-duration sleep below: `fixErrorMessage`
+        // drives a native `.alert`, which renders above every custom view including
+        // `FixingResumeOverlay` — setting it immediately (the instant a fix fails) would bury
+        // the overlay under the alert before it's had any chance to actually be seen, especially
+        // when the fix resolves in only a few milliseconds.
+        var pendingErrorMessage: String?
+
         do {
             if appState.buildSource == .upload, let resumeText = appState.extractedResumeText, !resumeText.isEmpty {
                 let improved = try await ResumeAnalysisEngine.improveResume(resumeText: resumeText, suggestions: issues, currentScore: kit.jobFitScore)
@@ -281,7 +288,10 @@ struct ReviewAndApplyView: View {
                 // actually is. So gate on a rescore of the *full* document instead.
                 let workHistory = appState.experience.workHistorySummary
                 guard !workHistory.isEmpty else {
-                    fixErrorMessage = "Add a work history summary first so there's something to improve."
+                    pendingErrorMessage = "Add a work history summary first so there's something to improve."
+                    withAnimation { fixProgress = 1.0 }
+                    try? await Task.sleep(for: .milliseconds(700))
+                    fixErrorMessage = pendingErrorMessage
                     return
                 }
                 let improvedWorkHistory = try await ResumeAnalysisEngine.applyFixes(to: workHistory)
@@ -300,13 +310,17 @@ struct ReviewAndApplyView: View {
             appState.aiReviewedThisSession = true
         } catch ResumeAnalysisError.noImprovement {
             print("[ResumeAnalysisEngine] improveResume: nothing safe to fix, or the fix didn't score higher")
-            fixErrorMessage = "We couldn't find anything more to safely fix automatically. Try tightening a sentence or adding a metric yourself."
+            pendingErrorMessage = "We couldn't find anything more to safely fix automatically. Try tightening a sentence or adding a metric yourself."
         } catch {
             print("[ResumeAnalysisEngine] improveResume failed: \(error)")
-            fixErrorMessage = "Something went wrong while improving your resume. Please try again."
+            pendingErrorMessage = "Something went wrong while improving your resume. Please try again."
         }
         withAnimation { fixProgress = 1.0 }
-        try? await Task.sleep(for: .milliseconds(250))
+        // A fix that resolves (success or failure) in a handful of milliseconds — e.g. when the
+        // on-device model isn't engaged — could otherwise dismiss the overlay before SwiftUI
+        // ever renders a visible frame of it. This guarantees it's actually seen.
+        try? await Task.sleep(for: .milliseconds(700))
+        fixErrorMessage = pendingErrorMessage
     }
 
     private func tag(_ text: String) -> some View {
