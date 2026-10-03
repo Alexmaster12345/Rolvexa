@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Lets the workflow be kicked off by hand from the Actions tab.
+  workflow_dispatch:
+
+concurrency:
+  # A newer push to the same branch makes the in-flight run redundant.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    # Tracks GitHub's newest stable image rather than pinning one that gets retired.
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pick the newest Xcode the image happens to ship, rather than pinning a version that
+      # later disappears from the image.
+      - name: Select the newest available Xcode
+        run: |
+          set -euo pipefail
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $latest"
+          sudo xcode-select -switch "$latest"
+          xcodebuild -version
+
+      # The app deploys to iOS 18, but it is *built* with Swift 6.2 features — `nonisolated` on
+      # type declarations, and SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor. On an older toolchain
+      # those surface as confusing parse errors deep in a build log, so fail here with a reason.
+      - name: Require Xcode 26 or newer
+        run: |
+          set -euo pipefail
+          version=$(xcodebuild -version | head -1 | awk '{print $2}')
+          major=${version%%.*}
+          echo "Xcode $version (major $major)"
+          if [ "$major" -lt 26 ]; then
+            echo "::error::Rolvexa needs Xcode 26+ to compile (Swift 6.2 concurrency features);" \
+                 "this runner image has $version. Wait for the image to update, or pin a newer runner."
+            exit 1
+          fi
+
+      # Resolve a simulator by name instead of hardcoding a model the image may not install.
+      - name: Choose a simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available
+          name=$(xcrun simctl list devices available \
+            | grep -oE 'iPhone [0-9]+( Pro)?( Max)?' \
+            | sort -V | tail -1)
+          if [ -z "$name" ]; then
+            echo "::error::No iPhone simulator available on this runner."
+            exit 1
+          fi
+          echo "Selected: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Build and test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Rolvexa.xcodeproj \
+            -scheme Rolvexa \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Upload test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults.xcresult
+          retention-days: 7

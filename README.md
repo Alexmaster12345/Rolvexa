@@ -1,5 +1,7 @@
 # Rolvexa
 
+[![CI](https://github.com/Alexmaster12345/Rolvexa/actions/workflows/ci.yml/badge.svg)](https://github.com/Alexmaster12345/Rolvexa/actions/workflows/ci.yml)
+
 **An offline resume parser, analyser and document generator for iOS.** Rolvexa reads a resume from a PDF, a Word file or a photo, scores it, compares it against a job posting, and regenerates it as a styled PDF or Word document — entirely on-device, with no cloud AI and no network access at any point.
 
 <p align="center">
