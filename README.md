@@ -83,6 +83,103 @@ out → Led deployment pipeline management and reduced release times by 40%.
 
 Weak phrasing replaced, the 40% untouched. Any output that drops or changes a number is discarded and the original kept.
 
+
+## Architecture
+
+```
+                    ┌──────────────── input ────────────────┐
+                    │                                       │
+            PDF ────┤  PDFKit                               │
+            DOCX ───┤  MinimalZipReader (inflate)           │
+            photo ──┤  Vision OCR → XY-cut reading order    │
+            typed ──┤  structured form                      │
+                    └───────────────────┬───────────────────┘
+                                        ▼
+                              ResumeSectionKit
+                        headings · sections · skills · links
+                                        ▼
+                     ┌──────────── resume model ────────────┐
+                     │  ExperienceInput · WorkExperience     │
+                     │  EducationEntry · JobTarget           │
+                     └───────────────────┬───────────────────┘
+                     ┌──────────────────┼──────────────────┐
+                     ▼                  ▼                  ▼
+            ResumeAnalysisEngine   JobFitAnalyzer    ResumeDraftStore
+             score · suggestions    weighted match    encrypted at rest
+                     │                  │
+                     └────────┬─────────┘
+                              ▼
+                     deterministic fixes
+                              ▼
+                  ┌───────────────────────┐
+                  │  FoundationModels     │  optional · phrasing only
+                  │  @Generable rewrite   │
+                  └───────────┬───────────┘
+                              ▼
+                      isSafeRewrite gate
+                 numbers preserved, or discarded
+                              ▼
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+            PDFDocumentRenderer   WordDocumentRenderer
+            CoreText/CoreGraphics  OOXML + MinimalZipWriter
+```
+
+Every arrow above is in-process. Nothing crosses a network boundary at any point.
+
+## Performance
+
+Measured on a two-page, eight-job resume — longer than typical, so these are an upper bound.
+Reproduce with:
+
+```
+TEST_RUNNER_RUN_BENCHMARKS=1 xcodebuild test -project Rolvexa.xcodeproj -scheme Rolvexa \
+  -only-testing:RolvexaTests/PipelineBenchmarks -destination 'id=<your device>'
+```
+
+| Stage | iPhone 14 Pro (A16) | Simulator (Apple silicon) |
+|---|---:|---:|
+| PDF text extraction | 5.9 ms | 5.2 ms |
+| DOCX extraction (inflate + parse) | 0.5 ms | 0.5 ms |
+| Vision OCR + reading-order rebuild | **181 ms** | 1 079 ms |
+| Section, skill and keyword parse | 2.3 ms | 3.4 ms |
+| Job-fit matching | 2.3 ms | 1.7 ms |
+| PDF rendering | 4.4 ms | 3.3 ms |
+| DOCX rendering | 9.7 ms | 6.0 ms |
+| Peak memory above baseline | 53 MB | 94 MB |
+| On-device model rewrite | not available on A16 | 0.6 s |
+
+Two things worth drawing out. OCR is **six times faster on the phone than in the simulator** —
+the Neural Engine does the work the simulator emulates on CPU, so simulator timings understate
+this app badly. And everything that isn't OCR or the language model completes in single-digit
+milliseconds, which is why the UI never needs a spinner outside those two stages.
+
+The A16 column has no model figure because Apple Intelligence needs A17 Pro or newer; that row
+is the deterministic path this device actually takes.
+
+## Threat model
+
+What the privacy claim does and doesn't cover.
+
+**Protected — never leaves the device:** resume contents, contact details, employment history,
+uploaded photos, pasted job descriptions, and saved drafts. There is no networking code in the
+project; `URLSession`, API keys and third-party SDKs are all absent, and CI builds the same
+source you can read.
+
+**At rest:** the draft is written to Application Support — not Documents, so it isn't exposed
+through the Files app — with complete file protection, so iOS keeps it encrypted whenever the
+device is locked. It is excluded from iCloud and iTunes backups, and deleted outright when
+discarded. No resume text is written anywhere else; an earlier debugging dump that wrote OCR
+output to Documents was removed.
+
+**Not protected, by design:** a compromised or jailbroken device; files the user deliberately
+exports and then shares; screenshots; and anything typed into another app. The on-device model
+runs inside Apple's sandbox under the OS's own privacy guarantees rather than ours.
+
+**Deliberately not claimed:** this is not anonymity, and it is not protection from someone who
+has your unlocked phone. It is the narrower, checkable claim that the app itself never transmits
+your resume anywhere.
+
 ## Tests
 
 ```
