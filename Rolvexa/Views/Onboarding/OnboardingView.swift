@@ -4,13 +4,22 @@ struct OnboardingView: View {
     @Environment(AppRouter.self) private var router
     @Environment(AppState.self) private var appState
 
+    /// Read once when the screen appears rather than on every body evaluation — reading it
+    /// decodes the draft file off disk.
+    @State private var savedDraft: ResumeDraftStore.Draft?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 HStack {
                     Spacer()
-                    Button("Skip") {}
-                        .foregroundStyle(.secondary)
+                    // Skips the explainer rather than doing nothing, which is what it did
+                    // before. Writing from scratch is the quickest route into the product.
+                    Button("Skip") {
+                        appState.buildSource = .write
+                        router.push(.inputExperience)
+                    }
+                    .foregroundStyle(.secondary)
                 }
 
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -61,19 +70,39 @@ struct OnboardingView: View {
                         appState.buildSource = .write
                         router.push(.inputExperience)
                     }
-                }
 
-                Button("I already have an account") {}
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 8)
+                    // Only shown when there is genuinely something to open. Offering "continue
+                    // your draft" to someone who has none would be the same empty promise as
+                    // the account link that used to sit at the bottom of this screen.
+                    if let savedDraft {
+                        OnboardingOptionCard(
+                            icon: "folder",
+                            title: "Open saved resume",
+                            subtitle: "Continue where you left off — \(Self.savedDescription(for: savedDraft.savedAt))",
+                            highlighted: false
+                        ) {
+                            appState.buildSource = .write
+                            appState.restoreDraftIfAvailable()
+                            router.push(.inputExperience)
+                        }
+                    }
+                }
             }
             .padding(20)
+        }
+        .task {
+            savedDraft = ResumeDraftStore.load()
         }
         #if os(iOS)
         .navigationBarBackButtonHidden()
         #endif
+    }
+
+    /// "saved 2 hours ago" — concrete enough to tell two sessions apart.
+    private static func savedDescription(for date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "saved \(formatter.localizedString(for: date, relativeTo: Date()))"
     }
 }
 
@@ -124,8 +153,28 @@ private struct OnboardingOptionCard: View {
     }
 }
 
-#Preview {
-    NavigationStack {
+#Preview("No saved draft") {
+    ResumeDraftStore.clear()
+    return NavigationStack {
+        OnboardingView()
+    }
+    .environment(AppRouter())
+    .environment(AppState())
+}
+
+#Preview("With a saved draft") {
+    var experience = ExperienceInput()
+    experience.fullName = "Jane Doe"
+    experience.currentRole = "Operations Manager"
+    ResumeDraftStore.save(
+        ResumeDraftStore.Draft(
+            experience: experience,
+            jobTarget: JobTarget(),
+            templateStyle: .modernEdge,
+            savedAt: Date().addingTimeInterval(-7_200)
+        )
+    )
+    return NavigationStack {
         OnboardingView()
     }
     .environment(AppRouter())

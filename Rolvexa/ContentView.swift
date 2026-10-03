@@ -25,11 +25,9 @@ struct ContentView: View {
         }
         .environment(router)
         .environment(appState)
-        .task {
-            // Bring back whatever was being written when the app last went away. Nothing was
-            // persisted at all before this — a half-finished resume died with the process.
-            appState.restoreDraftIfAvailable()
-        }
+        // No silent restore on launch. The draft is still saved on the way out, but reopening it
+        // is now an explicit choice on the onboarding screen ("Open saved resume"), so starting
+        // a fresh upload doesn't begin half-filled with the last session's answers.
         .onChange(of: scenePhase) { _, phase in
             // Saved on the way out rather than per keystroke: a resume is sensitive enough that
             // it shouldn't be rewritten to disk on every character, and leaving the foreground
