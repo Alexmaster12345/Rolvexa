@@ -72,4 +72,24 @@ final class AppState {
     var isKeepingOriginalUploadedLayout: Bool {
         keepOriginalUploadedLayout && canKeepOriginalUploadedLayout
     }
+
+    /// Replaces the uploaded resume's text and re-derives the body shown in the preview and
+    /// exports.
+    ///
+    /// Both must move together. "Fix It For Me" used to assign the fixed *raw* text straight to
+    /// `extractedResumeDisplayText`, which threw away the header-block de-duplication done at
+    /// upload — the name, contact details and profile links all reappeared in the body, looking
+    /// exactly like the original bug. Re-deriving keeps the two in step however the text changes.
+    func updateExtractedResumeText(_ newText: String) {
+        extractedResumeText = newText
+        extractedResumeDisplayText = ResumeSectionKit.removingHeaderBlock(
+            from: newText,
+            name: experience.fullName,
+            role: experience.currentRole,
+            summary: extractedSummary ?? "",
+            email: extractedEmail,
+            phone: extractedPhone,
+            location: extractedLocation
+        )
+    }
 }

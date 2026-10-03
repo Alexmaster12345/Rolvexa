@@ -85,8 +85,7 @@ struct ResumeReviewView: View {
             defer { progressTask.cancel() }
             if let text = appState.extractedResumeText, !text.isEmpty,
                let improved = try? await ResumeAnalysisEngine.applyFixes(to: text) {
-                appState.extractedResumeText = improved
-                appState.extractedResumeDisplayText = improved
+                appState.updateExtractedResumeText(improved)
                 appState.resumeReview = await ResumeAnalysisEngine.buildReview(from: improved)
                 appState.aiReviewedThisSession = true
             }

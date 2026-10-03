@@ -296,8 +296,7 @@ struct ReviewAndApplyView: View {
         do {
             if appState.buildSource == .upload, let resumeText = appState.extractedResumeText, !resumeText.isEmpty {
                 let improved = try await ResumeAnalysisEngine.improveResume(resumeText: resumeText, suggestions: issues, currentScore: kit.jobFitScore)
-                appState.extractedResumeText = improved.improvedText
-                appState.extractedResumeDisplayText = improved.improvedText
+                appState.updateExtractedResumeText(improved.improvedText)
                 appState.resumeTextWasManuallyFixed = true
                 appState.applicationKit = ApplicationKit(
                     jobFitScore: improved.qualityScore,
