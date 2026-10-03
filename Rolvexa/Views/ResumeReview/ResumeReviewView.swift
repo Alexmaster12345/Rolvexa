@@ -185,7 +185,7 @@ struct ResumeReviewView: View {
     // Populated with a real breakdown and suggestions: with empty arrays this preview rendered
     // an almost blank screen, which is no use for spotting layout problems.
     let state = AppState()
-    state.uploadedFileName = "Jamie_Chen_Resume.pdf"
+    state.uploadedFileName = "Jane_Doe_Resume.pdf"
     state.resumeReview = ResumeReview(
         overallScore: 78,
         breakdown: [

@@ -241,11 +241,11 @@ struct ResumeKitView: View {
     }
 
     private var displayName: String {
-        appState.experience.fullName.isEmpty ? "Jamie Chen" : appState.experience.fullName
+        appState.experience.fullName.isEmpty ? "Your Name" : appState.experience.fullName
     }
 
     private var displayRole: String {
-        appState.experience.currentRole.isEmpty ? "Product Designer" : appState.experience.currentRole
+        appState.experience.currentRole.isEmpty ? "Your Role" : appState.experience.currentRole
     }
 
     private var displayCompany: String {
@@ -261,7 +261,7 @@ struct ResumeKitView: View {
     }
 
     private var displaySkills: String {
-        appState.experience.skills.isEmpty ? "product design, user research, and prototyping" : appState.experience.skills.joined(separator: ", ")
+        appState.experience.skills.isEmpty ? "your key skills" : appState.experience.skills.joined(separator: ", ")
     }
 
     /// Mirrors `coverLetterExportText()` so the on-screen cover letter and the downloaded one
@@ -350,7 +350,7 @@ struct ResumeKitView: View {
                 name: displayName,
                 role: displayRole,
                 summary: displaySummary,
-                skills: appState.experience.skills.isEmpty ? ["Product Design", "Figma", "User Research"] : appState.experience.skills,
+                skills: appState.experience.skills.isEmpty ? ["Your first skill", "Your second skill"] : appState.experience.skills,
                 yearsOfExperience: appState.experience.yearsOfExperience,
                 experienceBullets: experienceBullets,
                 email: appState.experience.email.isEmpty ? nil : appState.experience.email,
@@ -467,12 +467,12 @@ struct ResumeKitView: View {
 #Preview("Kit — with job description") {
     let state = AppState()
     state.buildSource = .write
-    state.experience.fullName = "Elliot Alderson"
+    state.experience.fullName = "Jane Doe"
     state.experience.currentRole = "Senior Infrastructure Engineer"
     state.experience.skills = ["Python", "Linux", "Kubernetes", "Docker", "AWS", "CI/CD"]
     var job = WorkExperienceEntry()
     job.title = "Senior Infrastructure Engineer"
-    job.company = "Allsafe"
+    job.company = "Acme Corporation"
     job.startDate = "2019"
     job.isCurrent = true
     job.bullets = ["Ran containerised services on Kubernetes across three AWS regions",
@@ -480,12 +480,12 @@ struct ResumeKitView: View {
     state.experience.positions = [job]
     var school = EducationEntry()
     school.degree = "BSc Computer Science"
-    school.school = "New York University"
+    school.school = "State University"
     state.experience.educationEntries = [school]
     state.jobTarget.title = "Senior SRE"
-    state.jobTarget.company = "Northwind Labs"
+    state.jobTarget.company = "Initech"
     state.jobTarget.descriptionText = """
-    Senior Site Reliability Engineer — Northwind Labs
+    Senior Site Reliability Engineer — Initech
     You will run services on Kubernetes, manage infrastructure with Terraform, and automate
     deployments through CI/CD pipelines on AWS. Python and Linux required. Docker essential.
     Reliability and compliance are central to this platform. Bachelor degree preferred.

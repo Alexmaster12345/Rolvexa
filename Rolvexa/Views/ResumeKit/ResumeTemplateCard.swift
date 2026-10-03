@@ -184,7 +184,11 @@ struct ResumeTemplateCard: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .frame(width: 200, alignment: .leading)
+        // Flexible rather than a hard 200pt. Fixed, it took 57% of the card on a phone-width
+        // container and squeezed the main column to roughly 110pt, where achievement bullets
+        // truncated mid-word. The exported PDF uses 31% of the page, so this also brings the
+        // preview's proportions closer to the file it's previewing.
+        .frame(minWidth: 130, idealWidth: 170, maxWidth: 190, alignment: .leading)
         .frame(maxHeight: .infinity)
         .background(Color.indigo)
     }
@@ -493,42 +497,42 @@ struct ResumeTemplateCard: View {
 #Preview {
     ScrollView {
     ResumeTemplateCard(
-        name: "Jamie Chen",
-        role: "Senior Product Designer",
-        summary: "Senior Product Designer with 5–7 years of experience, skilled in Product Design, Figma, User Research. Seeking to bring this expertise to the Senior Product Designer role at Northwind Labs.",
-        skills: ["Product Design", "Figma", "User Research"],
+        name: "Jane Doe",
+        role: "Operations Manager",
+        summary: "Operations Manager with 5–7 years of experience, skilled in Process Design, Vendor Management, Reporting. Seeking to bring this expertise to the Senior Operations Manager role at Initech.",
+        skills: ["Process Design", "Vendor Management", "Reporting"],
         yearsOfExperience: "5–7 years",
-        experienceBullets: ["Led design for a resume-building app", "Improved onboarding conversion by 20%"],
-        email: "jamie@example.com",
-        phone: "555-0100",
-        location: "San Francisco, CA",
+        experienceBullets: ["Cut supplier onboarding time from 14 days to 5", "Reduced recurring maintenance spend by 18%"],
+        email: "jane.doe@example.com",
+        phone: "(555) 010-0100",
+        location: "Anytown, USA",
         // Obvious placeholders rather than plausible handles: this preview is the source of a
         // screenshot in the README, and "linkedin.com/in/jamiechen" is likely a real person's
         // profile to put on a stranger's project page.
         links: ["www.linkedin.com/in/your-name", "github.com/your-name"],
-        education: "BA Interaction Design\nCalifornia College of the Arts, San Francisco, CA\nMay 2017",
+        education: "BSc Business Administration\nState University, Anytown, USA\nMay 2017",
         positions: [
             {
                 var entry = WorkExperienceEntry()
-                entry.title = "Senior Product Designer"
-                entry.company = "Northwind Labs"
-                entry.location = "San Francisco, CA"
+                entry.title = "Operations Manager"
+                entry.company = "Acme Corporation"
+                entry.location = "Anytown, USA"
                 entry.startDate = "Mar 2021"
                 entry.isCurrent = true
                 entry.bullets = [
-                    "Led design for a resume-building app used by 40k people",
-                    "Improved onboarding conversion by 20%"
+                    "Cut supplier onboarding time from 14 days to 5",
+                    "Reduced recurring maintenance spend by 18%"
                 ]
                 return entry
             }(),
             {
                 var entry = WorkExperienceEntry()
-                entry.title = "Product Designer"
-                entry.company = "Gridline"
-                entry.location = "Oakland, CA"
+                entry.title = "Operations Analyst"
+                entry.company = "Globex Inc."
+                entry.location = "Anytown, USA"
                 entry.startDate = "Jun 2017"
                 entry.endDate = "Feb 2021"
-                entry.bullets = ["Shipped a design system adopted by four product teams"]
+                entry.bullets = ["Standardised reporting across four regional sites"]
                 return entry
             }()
         ]
@@ -539,15 +543,15 @@ struct ResumeTemplateCard: View {
 
 #Preview("Minimal Pro") {
     ResumeTemplateCard(
-        name: "Jamie Chen",
-        role: "Senior Product Designer",
-        summary: "Senior Product Designer with 5–7 years of experience, skilled in Product Design, Figma, User Research.",
-        skills: ["Product Design", "Figma", "User Research"],
+        name: "Jane Doe",
+        role: "Operations Manager",
+        summary: "Operations Manager with 5–7 years of experience, skilled in Process Design, Vendor Management, Reporting.",
+        skills: ["Process Design", "Vendor Management", "Reporting"],
         yearsOfExperience: "5–7 years",
-        experienceBullets: ["Led design for a resume-building app", "Improved onboarding conversion by 20%"],
-        email: "jamie@example.com",
-        phone: "555-0100",
-        location: "San Francisco, CA",
+        experienceBullets: ["Cut supplier onboarding time from 14 days to 5", "Reduced recurring maintenance spend by 18%"],
+        email: "jane.doe@example.com",
+        phone: "(555) 010-0100",
+        location: "Anytown, USA",
         style: .minimalPro
     )
     .padding(20)
@@ -555,15 +559,15 @@ struct ResumeTemplateCard: View {
 
 #Preview("Creative Bold") {
     ResumeTemplateCard(
-        name: "Jamie Chen",
-        role: "Senior Product Designer",
-        summary: "Senior Product Designer with 5–7 years of experience, skilled in Product Design, Figma, User Research.",
-        skills: ["Product Design", "Figma", "User Research"],
+        name: "Jane Doe",
+        role: "Operations Manager",
+        summary: "Operations Manager with 5–7 years of experience, skilled in Process Design, Vendor Management, Reporting.",
+        skills: ["Process Design", "Vendor Management", "Reporting"],
         yearsOfExperience: "5–7 years",
-        experienceBullets: ["Led design for a resume-building app", "Improved onboarding conversion by 20%"],
-        email: "jamie@example.com",
-        phone: "555-0100",
-        location: "San Francisco, CA",
+        experienceBullets: ["Cut supplier onboarding time from 14 days to 5", "Reduced recurring maintenance spend by 18%"],
+        email: "jane.doe@example.com",
+        phone: "(555) 010-0100",
+        location: "Anytown, USA",
         style: .creativeBold
     )
     .padding(20)
@@ -571,15 +575,15 @@ struct ResumeTemplateCard: View {
 
 #Preview("Executive Suite") {
     ResumeTemplateCard(
-        name: "Jamie Chen",
-        role: "Senior Product Designer",
-        summary: "Senior Product Designer with 5–7 years of experience, skilled in Product Design, Figma, User Research.",
-        skills: ["Product Design", "Figma", "User Research"],
+        name: "Jane Doe",
+        role: "Operations Manager",
+        summary: "Operations Manager with 5–7 years of experience, skilled in Process Design, Vendor Management, Reporting.",
+        skills: ["Process Design", "Vendor Management", "Reporting"],
         yearsOfExperience: "5–7 years",
-        experienceBullets: ["Led design for a resume-building app", "Improved onboarding conversion by 20%"],
-        email: "jamie@example.com",
-        phone: "555-0100",
-        location: "San Francisco, CA",
+        experienceBullets: ["Cut supplier onboarding time from 14 days to 5", "Reduced recurring maintenance spend by 18%"],
+        email: "jane.doe@example.com",
+        phone: "(555) 010-0100",
+        location: "Anytown, USA",
         style: .executiveSuite
     )
     .padding(20)

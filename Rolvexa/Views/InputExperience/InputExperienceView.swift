@@ -224,14 +224,14 @@ struct InputExperienceView: View {
 
         return Group {
             LabeledField(title: "Full Name") {
-                TextField("e.g. Jamie Chen", text: $appState.experience.fullName)
+                TextField("e.g. Jane Doe", text: $appState.experience.fullName)
                     .textFieldStyle(.roundedInput)
                     .focused($focusedField, equals: .fullName)
             }
             .id(Field.fullName)
 
             LabeledField(title: "Current Role / Most Recent Title") {
-                TextField("e.g. Senior Product Designer", text: $appState.experience.currentRole)
+                TextField("e.g. Operations Manager", text: $appState.experience.currentRole)
                     .textFieldStyle(.roundedInput)
                     .focused($focusedField, equals: .currentRole)
             }
