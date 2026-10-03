@@ -4,9 +4,9 @@ struct OnboardingView: View {
     @Environment(AppRouter.self) private var router
     @Environment(AppState.self) private var appState
 
-    /// Read once when the screen appears rather than on every body evaluation — reading it
-    /// decodes the draft file off disk.
-    @State private var savedDraft: ResumeDraftStore.Draft?
+    /// Read when the screen appears rather than on every body evaluation — reading it decodes
+    /// every saved record off disk.
+    @State private var saved: [ResumeLibrary.Summary] = []
 
     var body: some View {
         ScrollView {
@@ -74,20 +74,16 @@ struct OnboardingView: View {
                     // Always present, so the three ways to start are visible from the first
                     // launch — but inert and clearly labelled when there is nothing saved yet.
                     // Hiding it entirely made the screen look different on first run; offering
-                    // a live "continue your draft" with no draft behind it would be a promise
+                    // a live "continue your resume" with nothing behind it would be a promise
                     // the app can't keep.
                     OnboardingOptionCard(
                         icon: "folder",
                         title: "Saved resume",
-                        subtitle: savedDraft.map {
-                            "Continue where you left off — \(Self.savedDescription(for: $0.savedAt))"
-                        } ?? "Nothing saved yet — your progress is kept automatically as you go",
+                        subtitle: savedSubtitle,
                         highlighted: false,
-                        isEnabled: savedDraft != nil
+                        isEnabled: !saved.isEmpty
                     ) {
-                        appState.buildSource = .write
-                        appState.restoreDraftIfAvailable()
-                        router.push(.inputExperience)
+                        router.push(.myResumes)
                     }
                 }
 
@@ -105,19 +101,26 @@ struct OnboardingView: View {
             }
             .padding(20)
         }
-        .task {
-            savedDraft = ResumeDraftStore.load()
-        }
+        // `onAppear` rather than `task`, so popping back from the library picks up a resume
+        // that was just deleted or created there.
+        .onAppear { saved = ResumeLibrary.summaries() }
         #if os(iOS)
         .navigationBarBackButtonHidden()
         #endif
     }
 
-    /// "saved 2 hours ago" — concrete enough to tell two sessions apart.
-    private static func savedDescription(for date: Date) -> String {
+    /// Says how much is stored and when it last changed, rather than just "continue" — the
+    /// difference between one resume and five is the thing worth knowing before tapping.
+    private var savedSubtitle: String {
+        guard let newest = saved.first else {
+            return "Nothing saved yet — your progress is kept automatically as you go"
+        }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
-        return "saved \(formatter.localizedString(for: date, relativeTo: Date()))"
+        let when = formatter.localizedString(for: newest.updatedAt, relativeTo: Date())
+        return saved.count == 1
+            ? "Continue where you left off — edited \(when)"
+            : "\(saved.count) resumes saved — last edited \(when)"
     }
 }
 
@@ -126,7 +129,7 @@ private struct OnboardingOptionCard: View {
     let title: String
     let subtitle: String
     let highlighted: Bool
-    /// A card can be shown but not yet usable — "Open saved resume" before anything is saved.
+    /// A card can be shown but not yet usable — "Saved resume" before anything is saved.
     /// Dimmed and non-tappable rather than hidden, so the set of options doesn't change shape
     /// between a first launch and a later one.
     var isEnabled: Bool = true
@@ -175,8 +178,8 @@ private struct OnboardingOptionCard: View {
     }
 }
 
-#Preview("No saved draft") {
-    ResumeDraftStore.clear()
+#Preview("Nothing saved") {
+    ResumeLibrary.deleteAll()
     return NavigationStack {
         OnboardingView()
     }
@@ -184,17 +187,23 @@ private struct OnboardingOptionCard: View {
     .environment(AppState())
 }
 
-#Preview("With a saved draft") {
+#Preview("With saved resumes") {
+    ResumeLibrary.deleteAll()
     var experience = ExperienceInput()
     experience.fullName = "Jane Doe"
     experience.currentRole = "Operations Manager"
-    ResumeDraftStore.save(
-        ResumeDraftStore.Draft(
+    ResumeLibrary.save(
+        ResumeLibrary.SavedResume(
             experience: experience,
             jobTarget: JobTarget(),
             templateStyle: .modernEdge,
-            savedAt: Date().addingTimeInterval(-7_200)
-        )
+            createdAt: Date().addingTimeInterval(-7_200),
+            updatedAt: Date().addingTimeInterval(-7_200),
+            contentFingerprint: ResumeLibrary.fingerprint(
+                experience: experience, jobTarget: JobTarget()
+            )
+        ),
+        modifiedAt: Date().addingTimeInterval(-7_200)
     )
     return NavigationStack {
         OnboardingView()

@@ -25,15 +25,21 @@ struct ContentView: View {
         }
         .environment(router)
         .environment(appState)
-        // No silent restore on launch. The draft is still saved on the way out, but reopening it
-        // is now an explicit choice on the onboarding screen ("Open saved resume"), so starting
-        // a fresh upload doesn't begin half-filled with the last session's answers.
+        // No silent restore on launch. Work is still saved on the way out, but reopening it is
+        // an explicit choice — the "Saved resume" card on onboarding, or a row in My Resumes —
+        // so starting a fresh upload doesn't begin half-filled with the last session's answers.
+        .task {
+            // Earlier builds kept a single `resume-draft.json`. Moving it into the library has
+            // to happen before anything reads the library, or the user's in-progress resume
+            // appears to have vanished on update.
+            ResumeLibrary.migrateLegacyDraftIfNeeded()
+        }
         .onChange(of: scenePhase) { _, phase in
             // Saved on the way out rather than per keystroke: a resume is sensitive enough that
             // it shouldn't be rewritten to disk on every character, and leaving the foreground
             // is the point at which the process might not come back.
             if phase != .active {
-                appState.saveDraft()
+                appState.saveCurrentResume()
             }
         }
     }
@@ -55,6 +61,8 @@ struct ContentView: View {
             ResumeKitView()
         case .reviewAndApply:
             ReviewAndApplyView()
+        case .myResumes:
+            MyResumesView()
         case .legalAndPrivacy:
             LegalAndPrivacyView()
         case .legalDocument(let document):

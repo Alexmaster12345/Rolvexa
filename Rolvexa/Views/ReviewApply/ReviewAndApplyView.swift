@@ -346,6 +346,7 @@ struct ReviewAndApplyView: View {
                     resumeScore: improved.qualityScore,
                     suggestions: improved.suggestions.map { ImprovementSuggestion(title: $0.title, detail: $0.detail) }
                 )
+                appState.recordResumeScore(improved.qualityScore)
                 pendingSuccessMessage = successMessage(newScore: improved.qualityScore)
             } else {
                 // For "write from scratch", the only free-form prose field is the work history
@@ -387,6 +388,7 @@ struct ReviewAndApplyView: View {
                     resumeScore: rescored.qualityScore,
                     suggestions: rescored.suggestions.map { ImprovementSuggestion(title: $0.title, detail: $0.detail) }
                 )
+                appState.recordResumeScore(rescored.qualityScore)
                 pendingSuccessMessage = successMessage(newScore: rescored.qualityScore)
             }
             appState.aiReviewedThisSession = true

@@ -61,10 +61,12 @@ struct LegalDocumentView: View {
         """)
 
         section("What is stored on your device", """
-        Your work in progress is saved so closing the app doesn't lose it. That draft is kept in \
-        the app's private Application Support folder, written with complete file protection — \
-        iOS keeps it encrypted whenever your device is locked — and excluded from iCloud and \
-        iTunes backups. You can export it or delete it at any time from Legal & Privacy.
+        Every resume you work on is saved so closing the app doesn't lose it, and they build up \
+        into the library on the My Resumes screen. They are kept in the app's private \
+        Application Support folder, written with complete file protection — iOS keeps them \
+        encrypted whenever your device is locked — and excluded from iCloud and iTunes backups. \
+        You can export them, delete any one of them from My Resumes, or delete all of them at \
+        once from Legal & Privacy.
         """)
 
         section("Cookies and tracking", """

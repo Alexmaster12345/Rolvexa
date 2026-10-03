@@ -47,42 +47,129 @@ final class AppState {
         )
     }
 
-    // MARK: - Draft persistence
+    // MARK: - Library persistence
+
+    /// Which saved resume this session is editing.
+    ///
+    /// Assigned the first time the work is saved, and carried from then on, so subsequent saves
+    /// update that record rather than adding another copy to the library every time the app
+    /// leaves the foreground.
+    var currentResumeID: UUID?
+
+    /// When the resume being edited was first saved. Preserved across saves so the library can
+    /// show a creation date that doesn't move every time the user types.
+    private var currentResumeCreatedAt: Date?
+
+    /// The last score computed for the current resume, carried so a save can stamp it.
+    private var currentScore: ResumeLibrary.ScoreStamp?
 
     /// The parts of this state worth surviving app termination.
-    var currentDraft: ResumeDraftStore.Draft {
-        ResumeDraftStore.Draft(
+    var currentResume: ResumeLibrary.SavedResume {
+        let now = Date()
+        return ResumeLibrary.SavedResume(
+            id: currentResumeID ?? UUID(),
             experience: experience,
             jobTarget: jobTarget,
             templateStyle: selectedResumeTemplateStyle,
-            savedAt: Date()
+            createdAt: currentResumeCreatedAt ?? now,
+            updatedAt: now,
+            contentFingerprint: ResumeLibrary.fingerprint(
+                experience: experience, jobTarget: jobTarget
+            ),
+            score: currentScore
         )
     }
 
     /// Persists the in-progress resume. Called when the app leaves the foreground rather than on
     /// every keystroke — the save is cheap but a resume is sensitive enough that writing it to
     /// disk on each character typed is more exposure than the feature needs.
-    func saveDraft() {
-        ResumeDraftStore.save(currentDraft)
-    }
-
-    /// Restores a saved draft, if one exists and the user hasn't already started entering data
-    /// in this session.
     @discardableResult
-    func restoreDraftIfAvailable() -> Bool {
-        guard ResumeDraftStore.isWorthSaving(currentDraft) == false,
-              let draft = ResumeDraftStore.load() else { return false }
-        experience = draft.experience
-        jobTarget = draft.jobTarget
-        selectedResumeTemplateStyle = draft.templateStyle
+    func saveCurrentResume() -> Bool {
+        let resume = currentResume
+        guard ResumeLibrary.save(resume) else { return false }
+        currentResumeID = resume.id
+        currentResumeCreatedAt = resume.createdAt
         return true
     }
 
-    /// Forgets the saved resume entirely — both in memory and on disk.
-    func discardDraft() {
-        ResumeDraftStore.clear()
+    /// Loads a saved resume into this session, replacing whatever was being edited.
+    @discardableResult
+    func openResume(id: UUID) -> Bool {
+        guard let resume = ResumeLibrary.load(id: id) else { return false }
+        experience = resume.experience
+        jobTarget = resume.jobTarget
+        selectedResumeTemplateStyle = resume.templateStyle
+        currentResumeID = resume.id
+        currentResumeCreatedAt = resume.createdAt
+        currentScore = resume.score
+        clearDerivedResults()
+        return true
+    }
+
+    /// Begins a new, empty resume. The library keeps whatever was already saved.
+    func startNewResume() {
         experience = ExperienceInput()
         jobTarget = JobTarget()
+        currentResumeID = nil
+        currentResumeCreatedAt = nil
+        currentScore = nil
+        clearDerivedResults()
+    }
+
+    /// Records a freshly computed resume score against the content it was measured on.
+    ///
+    /// Stamped rather than stored bare so the library can stop showing it once the resume has
+    /// been edited — see ``ResumeLibrary/ScoreStamp``.
+    ///
+    /// Writes immediately rather than waiting for the app to leave the foreground. Scoring only
+    /// happens after the resume has real content, and a user who finishes a resume and then
+    /// force-quits shouldn't find the library listing it without the number they just saw.
+    func recordResumeScore(_ value: Int) {
+        currentScore = ResumeLibrary.ScoreStamp(
+            value: value,
+            fingerprint: ResumeLibrary.fingerprint(experience: experience, jobTarget: jobTarget),
+            computedAt: Date()
+        )
+        saveCurrentResume()
+    }
+
+    /// Deletes one saved resume. If it's the one open right now, the session is reset too —
+    /// otherwise the next save would write it straight back.
+    func deleteResume(id: UUID) {
+        ResumeLibrary.delete(id: id)
+        if currentResumeID == id { startNewResume() }
+    }
+
+    /// Forgets every saved resume — both in memory and on disk.
+    func deleteAllResumes() {
+        ResumeLibrary.deleteAll()
+        startNewResume()
+    }
+
+    /// Drops everything derived from the previous resume. An upload's extracted text, review and
+    /// generated kit all describe a specific document; leaving them in place while swapping the
+    /// resume underneath is how a score from one resume ends up displayed next to another.
+    private func clearDerivedResults() {
+        uploadedFileName = nil
+        extractedResumeText = nil
+        extractedResumeDisplayText = nil
+        extractedEmail = nil
+        extractedPhone = nil
+        extractedLocation = nil
+        extractedEducation = nil
+        extractedSummary = nil
+        extractedCompany = nil
+        extractedLinks = []
+        uploadedResumeFileData = nil
+        uploadedResumeFileExtension = nil
+        keepOriginalUploadedLayout = false
+        resumeTextWasManuallyFixed = false
+        resumeReview = nil
+        applicationKit = nil
+        aiGeneratedSummary = nil
+        aiGeneratedCoverLetterBody = nil
+        aiReviewedThisSession = false
+        suggestedJobTitles = []
     }
 
     /// Set only when the on-device AI agent (ResumeIntelligenceAgent) successfully generated

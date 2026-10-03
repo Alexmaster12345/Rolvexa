@@ -157,6 +157,10 @@ struct AIBuildingView: View {
                 resumeScore: review.qualityScore,
                 suggestions: review.suggestions.map { ImprovementSuggestion(title: $0.title, detail: $0.detail) }
             )
+            // Only a score that was actually measured gets stamped onto the saved resume. The
+            // library shows these in its list, and a number that came from a fallback constant
+            // would look exactly like a real one there.
+            appState.recordResumeScore(review.qualityScore)
             appState.aiReviewedThisSession = true
         } catch {
             print("[ResumeAnalysisEngine] reviewGrammar failed: \(error)")
@@ -192,6 +196,9 @@ struct AIBuildingView: View {
                 resumeScore: review.overallScore,
                 suggestions: review.suggestions
             )
+            // A real measurement of the uploaded document, so it's worth keeping. The branch
+            // below is a hardcoded placeholder and deliberately isn't recorded.
+            appState.recordResumeScore(review.overallScore)
         } else {
             appState.applicationKit = ApplicationKit(
                 resumeScore: 87,

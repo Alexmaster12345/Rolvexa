@@ -16,7 +16,9 @@ struct LegalAndPrivacyView: View {
 
     @State private var exportURL: URL?
     @State private var isConfirmingDelete = false
-    @State private var hasSavedData = ResumeDraftStore.hasDraft
+    @State private var savedCount = 0
+
+    private var hasSavedData: Bool { savedCount > 0 }
 
     var body: some View {
         ScrollView {
@@ -40,21 +42,23 @@ struct LegalAndPrivacyView: View {
                             ? "Everything Rolvexa has stored, as a readable file"
                             : "Nothing stored to export"
                     ) {
-                        exportURL = ResumeDraftStore.exportForSharing()
+                        exportURL = ResumeLibrary.exportForSharing()
                     }
                     .disabled(!hasSavedData)
 
                     Divider().padding(.leading, 60)
 
-                    // "Delete my saved resume", not "Delete account" — there is no account, and
+                    // "Delete my saved resumes", not "Delete account" — there is no account, and
                     // naming it that would imply a server-side record that doesn't exist.
                     row(
                         icon: "trash.fill",
                         tint: .red,
-                        title: "Delete my saved resume",
-                        subtitle: hasSavedData
-                            ? "Removes the draft from this device"
-                            : "Nothing saved on this device",
+                        title: "Delete my saved resumes",
+                        subtitle: savedCount == 0
+                            ? "Nothing saved on this device"
+                            : savedCount == 1
+                                ? "Removes the one resume stored on this device"
+                                : "Removes all \(savedCount) resumes stored on this device",
                         isDestructive: true
                     ) {
                         isConfirmingDelete = true
@@ -70,24 +74,24 @@ struct LegalAndPrivacyView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .onAppear { hasSavedData = ResumeDraftStore.hasDraft }
+        .onAppear { savedCount = ResumeLibrary.count }
         .sheet(isPresented: Binding(get: { exportURL != nil }, set: { if !$0 { exportURL = nil } })) {
             if let exportURL {
                 ShareSheet(items: [exportURL])
             }
         }
         .confirmationDialog(
-            "Delete your saved resume?",
+            savedCount == 1 ? "Delete your saved resume?" : "Delete all \(savedCount) saved resumes?",
             isPresented: $isConfirmingDelete,
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                appState.discardDraft()
-                hasSavedData = false
+                appState.deleteAllResumes()
+                savedCount = 0
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the draft stored on this device. It can't be undone, and there is no copy anywhere else.")
+            Text("This removes everything stored on this device. It can't be undone, and there is no copy anywhere else.")
         }
     }
 

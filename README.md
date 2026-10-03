@@ -46,7 +46,9 @@ From there, Rolvexa:
 - Generates a tailored cover letter and a job-fit analysis alongside your resume.
 - Exports everything as PDF or Word, ready to send — matching the on-screen preview section for section, including the contact icons, the photo, and a coloured sidebar that runs the full height of every page.
 
-Work in progress survives closing the app. The draft is kept in Application Support rather than Documents, written with complete file protection so iOS keeps it encrypted while the device is locked, and excluded from iCloud and iTunes backups — a resume shouldn't leave the device through a backup when the app promises it won't leave at all. Discarding it deletes the file.
+Work in progress survives closing the app, and builds up into a searchable library — one resume per role you're going after, each openable from **My Resumes**. Records are kept in Application Support rather than Documents, written with complete file protection so iOS keeps them encrypted while the device is locked, and excluded from iCloud and iTunes backups — a resume shouldn't leave the device through a backup when the app promises it won't leave at all. Deleting one removes its file.
+
+Each record carries its last score stamped with a digest of the text that score was measured on. Edit a bullet and the number disappears from the list rather than lingering next to text it no longer describes.
 
 Where a field is missing, Rolvexa leaves the section out rather than filling it with sample text. A resume that's visibly incomplete is recoverable; one that's confidently wrong about who you are is not.
 
@@ -116,7 +118,7 @@ one is a lie on a job application.
                      └───────────────────┬───────────────────┘
                      ┌──────────────────┼──────────────────┐
                      ▼                  ▼                  ▼
-            ResumeAnalysisEngine   JobFitAnalyzer    ResumeDraftStore
+            ResumeAnalysisEngine   JobFitAnalyzer     ResumeLibrary
              score · suggestions    weighted match    encrypted at rest
                      │                  │
                      └────────┬─────────┘
@@ -174,15 +176,19 @@ is the deterministic path this device actually takes.
 What the privacy claim does and doesn't cover.
 
 **Protected — never leaves the device:** resume contents, contact details, employment history,
-uploaded photos, pasted job descriptions, and saved drafts. There is no networking code in the
+uploaded photos, pasted job descriptions, and the saved resume library. There is no networking code in the
 project; `URLSession`, API keys and third-party SDKs are all absent, and CI builds the same
 source you can read.
 
-**At rest:** the draft is written to Application Support — not Documents, so it isn't exposed
-through the Files app — with complete file protection, so iOS keeps it encrypted whenever the
-device is locked. It is excluded from iCloud and iTunes backups, and deleted outright when
-discarded. No resume text is written anywhere else; an earlier debugging dump that wrote OCR
-output to Documents was removed.
+**At rest:** each saved resume is written to Application Support — not Documents, so it isn't
+exposed through the Files app — with complete file protection, so iOS keeps it encrypted
+whenever the device is locked. The folder is excluded from iCloud and iTunes backups, and
+deleting a resume removes its file outright. No resume text is written anywhere else; an
+earlier debugging dump that wrote OCR output to Documents was removed.
+
+**On request:** "Export my data" under Legal & Privacy writes every stored resume as
+pretty-printed JSON to the temporary directory, still file-protected, and hands it to the share
+sheet. There is no server to ask for a copy, so the export is simply the files themselves.
 
 **Not protected, by design:** a compromised or jailbroken device; files the user deliberately
 exports and then shares; screenshots; and anything typed into another app. The on-device model
@@ -208,7 +214,7 @@ xcodebuild test -project Rolvexa.xcodeproj -scheme Rolvexa \
 | `DocumentExporterTests` | Content parity across all four templates × PDF and Word, no contact block repeated across pages, `.docx` package validity and image embedding |
 | `ResumePhotoTests` | All eight EXIF orientations, checked against UIKit rather than against hand-reasoned expectations |
 | `ResumeSectionKitTests` | Header detection, section synonyms, keyword extraction and skill mining |
-| `ResumeDraftStoreTests` | Draft round-trip, refusing to persist an untouched form, backup exclusion, recovery from a corrupt file |
+| `ResumeLibraryTests` | Record round-trip, two resumes staying independent, newest-first ordering, search, a score going quiet once its text changes, migration from the old single-draft file, refusing to persist an untouched form, backup exclusion, one corrupt file not hiding the rest |
 | `AppleIntelligenceRewriterTests` | That a rewrite never alters a number — skipped automatically on hardware without Apple Intelligence rather than failing |
 
 Orientation and content-parity assertions compare against an independent oracle (UIKit, and the rendered PDF's own extracted text) rather than against expected values written by hand, because those are exactly the places where a wrong expectation looks like a passing test.
