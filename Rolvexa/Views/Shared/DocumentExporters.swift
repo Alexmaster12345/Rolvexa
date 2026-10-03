@@ -123,11 +123,22 @@ private func parseResumeBody(_ body: String, extractingEducation: Bool = false) 
     var skills: [String] = []
     var educationLines: [String] = []
     var remaining: [String] = []
+
+    // Both hoisted sections run until the next heading — but an uploaded resume's headings are
+    // whatever its author typed, and a job line like "Role 1 | 2010" isn't one. Without a line
+    // cap, a SKILLS or EDUCATION heading with no heading after it swallowed the entire rest of
+    // the document into the narrow sidebar, where it was silently clipped. The caps are
+    // generous enough for several entries and bound the damage when no terminator appears.
+    let maximumSkillLines = 10
+    let maximumEducationLines = 12
+
     while index < lines.count {
         let line = lines[index]
         if ResumeSectionKit.isSectionHeader(line), line.trimmingCharacters(in: .whitespaces).uppercased().contains("SKILL") {
             index += 1
-            while index < lines.count, !ResumeSectionKit.isSectionHeader(lines[index]) {
+            var consumed = 0
+            while index < lines.count, consumed < maximumSkillLines,
+                  !ResumeSectionKit.isSectionHeader(lines[index]) {
                 for piece in lines[index].components(separatedBy: ",") {
                     let trimmed = piece.trimmingCharacters(in: .whitespaces)
                     guard !trimmed.isEmpty else { continue }
@@ -138,14 +149,18 @@ private func parseResumeBody(_ body: String, extractingEducation: Bool = false) 
                     if !isDuplicate { skills.append(trimmed) }
                 }
                 index += 1
+                consumed += 1
             }
         } else if extractingEducation, ResumeSectionKit.isSectionHeader(line),
                   line.trimmingCharacters(in: .whitespaces).uppercased().contains("EDUCATION") {
             index += 1
-            while index < lines.count, !ResumeSectionKit.isSectionHeader(lines[index]) {
+            var consumed = 0
+            while index < lines.count, consumed < maximumEducationLines,
+                  !ResumeSectionKit.isSectionHeader(lines[index]) {
                 let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
                 if !trimmed.isEmpty { educationLines.append(trimmed) }
                 index += 1
+                consumed += 1
             }
         } else {
             remaining.append(line)

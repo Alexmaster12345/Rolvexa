@@ -45,6 +45,25 @@ Apple Intelligence requires capable hardware (A17 Pro or newer). The app checks 
 
 Spelling and grammar deliberately stay on the deterministic path even where the model is available — a rules engine can't "autocorrect" someone's surname into a different word, which is exactly the kind of silent corruption a resume can't tolerate.
 
+## Tests
+
+```
+xcodebuild test -project Rolvexa.xcodeproj -scheme Rolvexa \
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+114 tests ([Swift Testing](https://developer.apple.com/documentation/testing)) over the deterministic core — the parts where a silent mistake reaches the user's actual resume:
+
+| Suite | Covers |
+|---|---|
+| `JobFitAnalyzerTests` | Scoring and weight redistribution, whole-token matching ("R" must not match *Paris*, C++ must not register C), and refusing to score a posting it can't read |
+| `ResumeExportTextTests` | Section order and headings, summary precedence, and that a failed upload invents no content |
+| `DocumentExporterTests` | Content parity across all four templates × PDF and Word, no contact block repeated across pages, `.docx` package validity and image embedding |
+| `ResumePhotoTests` | All eight EXIF orientations, checked against UIKit rather than against hand-reasoned expectations |
+| `ResumeSectionKitTests` | Header detection, section synonyms, keyword extraction and skill mining |
+
+Orientation and content-parity assertions compare against an independent oracle (UIKit, and the rendered PDF's own extracted text) rather than against expected values written by hand, because those are exactly the places where a wrong expectation looks like a passing test.
+
 ## Setup
 
 Open `Rolvexa.xcodeproj` in Xcode and build. Nothing else to configure — no model weights to download, no dependencies to resolve.
