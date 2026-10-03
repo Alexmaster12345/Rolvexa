@@ -34,21 +34,36 @@ private func parseResumeBody(_ body: String) -> ParsedResumeBody {
     let lines = body.components(separatedBy: "\n")
     var index = 0
 
-    func nextNonEmptyBeforeHeader() -> String? {
-        while index < lines.count, !ResumeSectionKit.isSectionHeader(lines[index]) {
-            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
-            index += 1
-            if !trimmed.isEmpty { return trimmed }
-        }
-        return nil
+    // `resumeExportText()` always emits the header block first — name, then the role and contact
+    // line when present — followed by a blank line before the first section. The block is read
+    // off that blank-line boundary rather than by scanning for the first section header, because
+    // a name set in capitals ("ELLIOT ALDERSON") is itself indistinguishable from a heading:
+    // `isSectionHeader` matched it, every field came back empty, and the whole header block fell
+    // through into the body — leaving the Contact sidebar blank and the name, phone and location
+    // repeated under About Me instead.
+    var headerLines: [String] = []
+    while index < lines.count, headerLines.count < 3 {
+        let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+        index += 1
+        if trimmed.isEmpty { break }
+        headerLines.append(trimmed)
     }
-
-    let name = nextNonEmptyBeforeHeader() ?? ""
-    let role = nextNonEmptyBeforeHeader() ?? ""
-    let contactLine = nextNonEmptyBeforeHeader() ?? ""
-    // Skip past any further header-block lines (shouldn't normally be any) up to the first
-    // real section header.
+    // Skip to the first real section header, in case the block ran longer than expected.
     while index < lines.count, !ResumeSectionKit.isSectionHeader(lines[index]) { index += 1 }
+
+    // The role is omitted when unknown, so position alone can't say which line is which —
+    // the contact line is identified by its content instead.
+    let name = headerLines.first ?? ""
+    var role = ""
+    var contactLine = ""
+    for line in headerLines.dropFirst() {
+        let looksLikeContact = line.contains("@") || line.contains("|")
+        if looksLikeContact, contactLine.isEmpty {
+            contactLine = line
+        } else if role.isEmpty {
+            role = line
+        }
+    }
 
     var skills: [String] = []
     var remaining: [String] = []

@@ -577,6 +577,7 @@ struct ResumeUploadView: View {
                     location: appState.extractedLocation
                 )
 
+                appState.extractedLinks = ResumeSectionKit.extractLinks(from: extractedText)
                 appState.extractedEducation = extractEducation(from: extractedText)
                 appState.experience.skills = ResumeSectionKit.extractSkills(from: extractedText)
 

@@ -15,6 +15,9 @@ final class AppState {
     /// Company from the first entry under the resume's "Experience" section — used as a fallback
     /// display value (e.g. on "Review & Send") when no job target company has been entered yet.
     var extractedCompany: String?
+    /// Profile/portfolio URLs (LinkedIn, GitHub, …) pulled out of an uploaded resume. Rendered
+    /// with the contact details rather than left loose in the body.
+    var extractedLinks: [String] = []
     var extractedResumeDisplayText: String?
     var keepOriginalUploadedLayout = false
     var selectedResumeTemplateStyle: ResumeTemplateStyle = .modernEdge

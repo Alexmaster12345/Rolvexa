@@ -150,6 +150,39 @@ enum ResumeSectionKit {
         return found
     }
 
+    // MARK: - Profile links
+
+    static let linkDomains = [
+        "linkedin.com", "github.com", "gitlab.com", "twitter.com", "x.com",
+        "behance.net", "dribbble.com", "medium.com", "stackoverflow.com"
+    ]
+
+    private static let linkLabels: Set<String> = [
+        "linkedin", "github", "gitlab", "twitter", "x", "portfolio", "website", "behance", "dribbble"
+    ]
+
+    /// Profile/portfolio URLs found anywhere in the resume, de-duplicated and in reading order.
+    /// These belong with the contact details rather than loose in the body, so the exporters
+    /// render them alongside the email and phone.
+    static func extractLinks(from text: String) -> [String] {
+        var found: [String] = []
+        for rawLine in text.components(separatedBy: .newlines) {
+            for token in rawLine.split(whereSeparator: { $0 == " " || $0 == "|" || $0 == "\t" }) {
+                let candidate = String(token)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪·‣,;()<>[] "))
+                let lowered = candidate.lowercased()
+                guard lowered.hasPrefix("http") || lowered.hasPrefix("www.")
+                        || linkDomains.contains(where: lowered.contains) else { continue }
+                // An email contains a domain too, but it isn't a profile link.
+                guard !candidate.contains("@") else { continue }
+                if !found.contains(where: { $0.caseInsensitiveCompare(candidate) == .orderedSame }) {
+                    found.append(candidate)
+                }
+            }
+        }
+        return found
+    }
+
     // MARK: - Header de-duplication
 
     /// Strips the header block — name, role, contact details, summary — out of a resume body.
@@ -178,11 +211,40 @@ enum ResumeSectionKit {
         // A short, digit-free line starting with the first name is almost always a second
         // rendering of the name (a sidebar profile card, a page header), which an exact match
         // can't catch when the surname extracted slightly differently.
-        let nameFirstWord = name.split(separator: " ").first.map(String.init) ?? ""
+        // Every part of the name, not just the first. A resume that sets the name in large
+        // display type down a sidebar gets read back by OCR as separate lines — "ELLIOT" on one,
+        // "ALDERSON" on another — so matching only the first word left the surname behind as a
+        // stray line in the body.
+        let nameTokens = name
+            .split(whereSeparator: { !$0.isLetter })
+            .map { String($0).lowercased() }
+            .filter { $0.count >= 2 }
+
         func looksLikeDuplicateNameLine(_ trimmed: String) -> Bool {
-            guard !nameFirstWord.isEmpty, trimmed.hasPrefix(nameFirstWord) else { return false }
+            guard !nameTokens.isEmpty else { return false }
             let words = trimmed.split(separator: " ")
-            return words.count <= 4 && !trimmed.contains(where: \.isNumber)
+            guard words.count <= 4, !trimmed.contains(where: \.isNumber) else { return false }
+            // Only when the line is made up *entirely* of name parts, so a real sentence or a
+            // job title that merely happens to contain a name word is kept.
+            let lineTokens = trimmed
+                .split(whereSeparator: { !$0.isLetter })
+                .map { String($0).lowercased() }
+                .filter { $0.count >= 2 }
+            guard !lineTokens.isEmpty else { return false }
+            return lineTokens.allSatisfy { nameTokens.contains($0) }
+        }
+
+        /// A line that is just a profile link (and the bare "LinkedIn:" style label above it).
+        /// Those belong with the contact details, which render them separately, so they're
+        /// stripped here rather than left loose in the body.
+        func isLinkLine(_ trimmed: String) -> Bool {
+            let lowered = trimmed.lowercased()
+            guard trimmed.split(separator: " ").count <= 3 else { return false }
+            if lowered.hasPrefix("http") || lowered.hasPrefix("www.") { return true }
+            if linkDomains.contains(where: lowered.contains) { return true }
+            // "LinkedIn:" / "Twitter:" labels sitting on their own line above the URL.
+            let label = lowered.trimmingCharacters(in: CharacterSet(charactersIn: ": "))
+            return linkLabels.contains(label)
         }
 
         /// A line that is nothing but an email address (optionally behind a short label such as
@@ -233,6 +295,7 @@ enum ResumeSectionKit {
             // the header already carries it, so it never needs to appear in the body.
             if email != nil, isStandaloneEmailLine(trimmed) { return false }
             if isRepeatedContactDetailLine(trimmed) { return false }
+            if isLinkLine(trimmed) { return false }
             return true
         }
 

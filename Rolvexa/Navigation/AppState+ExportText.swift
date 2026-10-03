@@ -55,7 +55,11 @@ extension AppState {
     private func structuredUploadExportText(rawExtracted: String) -> String {
         let name = experience.fullName.isEmpty ? (uploadedFileName ?? "Your Resume") : experience.fullName
         let role = experience.currentRole
-        let contactLine = [extractedEmail, extractedPhone, extractedLocation].compactMap { $0 }.joined(separator: " | ")
+        // Profile links join the contact details rather than sitting in a loose "LINKS" section
+        // in the body — the templates render this whole line as the contact block.
+        let contactLine = ([extractedEmail, extractedPhone, extractedLocation].compactMap { $0 } + extractedLinks)
+            .filter { !$0.isEmpty }
+            .joined(separator: " | ")
         let summary = extractedSummary ?? ""
 
         // Re-filter by content even though `extractedResumeDisplayText` should already be
