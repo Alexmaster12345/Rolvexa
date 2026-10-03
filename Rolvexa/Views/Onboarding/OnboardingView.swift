@@ -78,7 +78,7 @@ struct OnboardingView: View {
                     // the app can't keep.
                     OnboardingOptionCard(
                         icon: "folder",
-                        title: "Open saved resume",
+                        title: "Saved resume",
                         subtitle: savedDraft.map {
                             "Continue where you left off — \(Self.savedDescription(for: $0.savedAt))"
                         } ?? "Nothing saved yet — your progress is kept automatically as you go",
@@ -95,7 +95,7 @@ struct OnboardingView: View {
                 // spells out exactly what that does and doesn't cover is reachable before the
                 // user hands over a resume — not buried in a settings screen afterwards.
                 Button("Privacy & Terms") {
-                    router.push(.privacyAndTerms)
+                    router.push(.legalAndPrivacy)
                 }
                 .buttonStyle(.plain)
                 .font(.footnote)

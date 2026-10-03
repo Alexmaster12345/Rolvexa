@@ -55,8 +55,10 @@ struct ContentView: View {
             ResumeKitView()
         case .reviewAndApply:
             ReviewAndApplyView()
-        case .privacyAndTerms:
-            PrivacyAndTermsView()
+        case .legalAndPrivacy:
+            LegalAndPrivacyView()
+        case .legalDocument(let document):
+            LegalDocumentView(document: document)
         }
     }
 }

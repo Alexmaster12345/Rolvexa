@@ -100,6 +100,28 @@ enum ResumeDraftStore {
         return FileManager.default.fileExists(atPath: fileURL.path)
     }
 
+    /// Everything the app holds about you, as readable JSON, written somewhere the share sheet
+    /// can reach.
+    ///
+    /// There is no server to request a copy from, so "export my data" is simply handing back the
+    /// one file that exists. Returns nil when there's nothing stored.
+    static func exportForSharing() -> URL? {
+        guard let draft = load() else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(draft) else { return nil }
+
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rolvexa-my-data.json")
+        // Protected while it waits in the temporary directory for the share sheet, same as the
+        // draft it came from.
+        guard (try? data.write(to: destination, options: [.atomic, .completeFileProtection])) != nil else {
+            return nil
+        }
+        return destination
+    }
+
     private static func excludeFromBackup(_ url: URL) throws {
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
