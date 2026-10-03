@@ -194,6 +194,29 @@ enum ResumeSectionKit {
             return words.contains { $0.contains("@") && $0.contains(".") }
         }
 
+        /// A bulleted or bare repeat of the phone number or location from the contact block.
+        ///
+        /// Exact matching isn't enough here: OCR frequently reads the same phone number
+        /// differently in two places on the page ("+1-202-555-0199" in the header versus
+        /// "+1-202-55-0178" in a sidebar bullet), so the digits are compared loosely by count
+        /// rather than by value. Four-digit years and date ranges stay well under the threshold,
+        /// so education and employment dates are untouched.
+        func isRepeatedContactDetailLine(_ trimmed: String) -> Bool {
+            let stripped = trimmed
+                .trimmingCharacters(in: CharacterSet(charactersIn: "•-*▪·‣ "))
+                .trimmingCharacters(in: .whitespaces)
+            guard !stripped.isEmpty, stripped.count <= 60 else { return false }
+
+            if let location, !location.isEmpty,
+               stripped.range(of: location, options: .caseInsensitive) != nil {
+                return true
+            }
+            if phone != nil, stripped.filter(\.isNumber).count >= 9 {
+                return true
+            }
+            return false
+        }
+
         let filtered = text.components(separatedBy: .newlines).filter { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if exactMatches.contains(trimmed) { return false }
@@ -209,6 +232,7 @@ enum ResumeSectionKit {
             // Any short line that is essentially just an address is the contact email again —
             // the header already carries it, so it never needs to appear in the body.
             if email != nil, isStandaloneEmailLine(trimmed) { return false }
+            if isRepeatedContactDetailLine(trimmed) { return false }
             return true
         }
 

@@ -352,6 +352,29 @@ struct ResumeUploadView: View {
         return String(text[matchRange])
     }
 
+    /// Picks the candidate's own address when a resume lists more than one.
+    ///
+    /// Taking the first match in reading order is wrong for the common "REFERENCE" block naming
+    /// someone else — on a sidebar layout that referee's address is read before the candidate's
+    /// own, so the finished resume ends up headed with a stranger's email. An address whose local
+    /// part shares a word with the candidate's name is almost certainly theirs.
+    private func bestEmail(in text: String, name: String) -> String? {
+        let emails = allMatches(pattern: #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#, in: text)
+        guard !emails.isEmpty else { return nil }
+        let nameTokens = name.lowercased()
+            .split(whereSeparator: { !$0.isLetter })
+            .map(String.init)
+            .filter { $0.count >= 3 }
+        if !nameTokens.isEmpty {
+            let owned = emails.first { email in
+                let localPart = email.split(separator: "@").first.map(String.init)?.lowercased() ?? ""
+                return nameTokens.contains { localPart.contains($0) }
+            }
+            if let owned { return owned }
+        }
+        return emails.first
+    }
+
     private func extractEmail(from text: String) -> String? {
         firstMatch(pattern: #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#, in: text)
     }
@@ -524,7 +547,7 @@ struct ResumeUploadView: View {
                     if titleIndex >= 0, titleIndex != nameIndex {
                         appState.experience.currentRole = lines[titleIndex]
                     }
-                    appState.extractedEmail = pipeContact.email ?? extractEmail(from: extractedText)
+                    appState.extractedEmail = pipeContact.email ?? bestEmail(in: extractedText, name: appState.experience.fullName)
                     appState.extractedPhone = pipeContact.phone ?? extractPhone(from: extractedText)
                     appState.extractedLocation = pipeContact.location ?? extractLocation(from: extractedText)
 
@@ -533,7 +556,7 @@ struct ResumeUploadView: View {
                 } else {
                     let location = extractLocation(from: extractedText)
                     appState.experience.fullName = guessedName(fromText: extractedText, filename: selectedFileName, excludingLocation: location)
-                    appState.extractedEmail = extractEmail(from: extractedText)
+                    appState.extractedEmail = bestEmail(in: extractedText, name: appState.experience.fullName)
                     appState.extractedPhone = extractPhone(from: extractedText)
                     appState.extractedLocation = location
                 }
