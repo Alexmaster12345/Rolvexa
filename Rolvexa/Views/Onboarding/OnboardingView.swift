@@ -71,20 +71,23 @@ struct OnboardingView: View {
                         router.push(.inputExperience)
                     }
 
-                    // Only shown when there is genuinely something to open. Offering "continue
-                    // your draft" to someone who has none would be the same empty promise as
-                    // the account link that used to sit at the bottom of this screen.
-                    if let savedDraft {
-                        OnboardingOptionCard(
-                            icon: "folder",
-                            title: "Open saved resume",
-                            subtitle: "Continue where you left off — \(Self.savedDescription(for: savedDraft.savedAt))",
-                            highlighted: false
-                        ) {
-                            appState.buildSource = .write
-                            appState.restoreDraftIfAvailable()
-                            router.push(.inputExperience)
-                        }
+                    // Always present, so the three ways to start are visible from the first
+                    // launch — but inert and clearly labelled when there is nothing saved yet.
+                    // Hiding it entirely made the screen look different on first run; offering
+                    // a live "continue your draft" with no draft behind it would be a promise
+                    // the app can't keep.
+                    OnboardingOptionCard(
+                        icon: "folder",
+                        title: "Open saved resume",
+                        subtitle: savedDraft.map {
+                            "Continue where you left off — \(Self.savedDescription(for: $0.savedAt))"
+                        } ?? "Nothing saved yet — your progress is kept automatically as you go",
+                        highlighted: false,
+                        isEnabled: savedDraft != nil
+                    ) {
+                        appState.buildSource = .write
+                        appState.restoreDraftIfAvailable()
+                        router.push(.inputExperience)
                     }
                 }
             }
@@ -111,6 +114,10 @@ private struct OnboardingOptionCard: View {
     let title: String
     let subtitle: String
     let highlighted: Bool
+    /// A card can be shown but not yet usable — "Open saved resume" before anything is saved.
+    /// Dimmed and non-tappable rather than hidden, so the set of options doesn't change shape
+    /// between a first launch and a later one.
+    var isEnabled: Bool = true
     let action: () -> Void
 
     var body: some View {
@@ -150,6 +157,9 @@ private struct OnboardingOptionCard: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.5)
+        .accessibilityHint(isEnabled ? "" : "Unavailable until you have a saved draft")
     }
 }
 
