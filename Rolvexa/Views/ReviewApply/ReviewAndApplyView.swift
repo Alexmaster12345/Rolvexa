@@ -47,7 +47,8 @@ struct ReviewAndApplyView: View {
                     // byte-for-byte identical design) — never a regenerated cross-format dump
                     // that silently discards it. Otherwise offer both, now that PDFDocumentRenderer
                     // applies the chosen template's styling too, not just Word.
-                    format: keepsOriginalResumeLayout ? resumeOriginalFormat : nil
+                    format: keepsOriginalResumeLayout ? resumeOriginalFormat : nil,
+                    includesPhoto: true
                 )
                 kitRow(icon: "envelope.fill", title: "Cover Letter", subtitle: "Tailored & ready", baseFilename: "CoverLetter", documentTitle: "Cover Letter", exportText: appState.coverLetterExportText, format: nil)
                 kitRow(icon: "chart.bar.fill", title: "Job Fit Analysis", subtitle: "\(appState.applicationKit?.jobFitScore ?? 0)% match", baseFilename: "JobFitAnalysis", documentTitle: "Job Fit Analysis", exportText: appState.jobFitExportText, format: nil)
@@ -311,19 +312,31 @@ struct ReviewAndApplyView: View {
                 // score — no Summary/Skills headers, so always heavily penalized — against the
                 // full resume's score, guaranteeing rejection regardless of how good the rewrite
                 // actually is. So gate on a rescore of the *full* document instead.
-                let workHistory = appState.experience.workHistorySummary
-                guard !workHistory.isEmpty else {
-                    pendingErrorMessage = "Add a work history summary first so there's something to improve."
+                let originalPositions = appState.experience.positions
+                guard !appState.experience.workHistorySummary.isEmpty else {
+                    pendingErrorMessage = "Add a job with at least one achievement bullet first so there's something to improve."
                     withAnimation { fixProgress = 1.0 }
                     try? await Task.sleep(for: .milliseconds(700))
                     fixErrorMessage = pendingErrorMessage
                     return
                 }
-                let improvedWorkHistory = try await ResumeAnalysisEngine.applyFixes(to: workHistory)
-                appState.experience.workHistorySummary = improvedWorkHistory
+                // Rewrite each achievement bullet in place. The bullets *are* the free-form prose
+                // now that jobs are structured — rewriting a flattened paragraph and assigning it
+                // back would collapse every job into one blob.
+                var rewritten = originalPositions
+                for positionIndex in rewritten.indices {
+                    for bulletIndex in rewritten[positionIndex].bullets.indices {
+                        let bullet = rewritten[positionIndex].bullets[bulletIndex]
+                            .trimmingCharacters(in: .whitespaces)
+                        guard !bullet.isEmpty else { continue }
+                        rewritten[positionIndex].bullets[bulletIndex] =
+                            try await ResumeAnalysisEngine.applyFixes(to: bullet)
+                    }
+                }
+                appState.experience.positions = rewritten
                 let rescored = try await ResumeAnalysisEngine.reviewGrammar(resumeText: appState.resumeExportText())
                 guard rescored.qualityScore >= kit.jobFitScore else {
-                    appState.experience.workHistorySummary = workHistory
+                    appState.experience.positions = originalPositions
                     print("[ResumeAnalysisEngine] fixResume: full-document rescore \(rescored.qualityScore) worse than \(kit.jobFitScore) — discarding")
                     throw ResumeAnalysisError.noImprovement
                 }
@@ -378,7 +391,8 @@ struct ReviewAndApplyView: View {
         exportText: @escaping () -> String,
         originalFileData: Data? = nil,
         originalFileExtension: String? = nil,
-        format: ExportFormat? = .word
+        format: ExportFormat? = .word,
+        includesPhoto: Bool = false
     ) -> some View {
         HStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 10).fill(Color.indigo.opacity(0.12)).frame(width: 40, height: 40)
@@ -395,7 +409,8 @@ struct ReviewAndApplyView: View {
                 originalFileData: originalFileData,
                 originalFileExtension: originalFileExtension,
                 fixedFormat: format,
-                style: appState.selectedResumeTemplateStyle
+                style: appState.selectedResumeTemplateStyle,
+                photoData: includesPhoto ? appState.experience.photoData : nil
             )
         }
         .padding(12)

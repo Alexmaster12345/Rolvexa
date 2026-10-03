@@ -21,13 +21,20 @@ private extension CGColor {
 /// standard system fonts on both macOS and Windows, so Word and any PDF reader render them
 /// without the file carrying any image data.
 private enum ContactGlyph {
-    static let email = "\u{2709}"     // ✉
-    static let phone = "\u{260E}"     // ☎
-    static let location = "\u{2302}"  // ⌂
+    /// U+FE0E VARIATION SELECTOR-15 requests the *text* presentation of a dual-presentation
+    /// character. Without it, ☎ and ↗ default to emoji on Apple platforms: CoreText substituted
+    /// Apple Color Emoji and the sidebar got a red phone box and blue arrow tiles instead of the
+    /// white monochrome icons the preview shows (and dragged the colour-emoji font subset into
+    /// the PDF along with them).
+    private static let textPresentation = "\u{FE0E}"
+
+    static let email = "\u{2709}" + textPresentation     // ✉
+    static let phone = "\u{260E}" + textPresentation     // ☎
+    static let location = "\u{2302}"                     // ⌂ — text-only, no selector needed
     // Deliberately an arrow rather than 🔗: that emoji is outside the Basic Multilingual Plane,
     // so CoreText embeds a subset of the colour-emoji font and the PDF jumps from ~15KB to
     // ~108KB for one glyph. This one lives in the standard text fonts.
-    static let link = "\u{2197}"      // ↗
+    static let link = "\u{2197}" + textPresentation      // ↗
 
     /// A whole "a | b | c" contact line with each part prefixed by its glyph, for the layouts
     /// that render contact details as one run rather than a stacked list.
@@ -46,6 +53,9 @@ private enum ContactGlyph {
         if value.contains("@") { return email }
         if lowered.hasPrefix("http") || lowered.hasPrefix("www.")
             || ResumeSectionKit.linkDomains.contains(where: lowered.contains) { return link }
+        // A bare domain the known-hosts list doesn't cover ("priyasingh.com") is still a link.
+        // Requiring no spaces or commas keeps real places out: "St. Louis, MO" has a dot too.
+        if value.contains("."), !value.contains(" "), !value.contains(",") { return link }
         // A value that is mostly digits is a phone number; anything else is a place.
         let digits = value.filter(\.isNumber).count
         return digits >= 7 ? phone : location
@@ -61,6 +71,9 @@ private struct ParsedResumeBody {
     var role: String
     var contactLine: String
     var skills: [String]
+    /// Only populated when the caller asked for it (the sidebar layouts) — otherwise education
+    /// stays in `remainingLines` where the body renders it in reading order.
+    var educationLines: [String]
     var remainingLines: [String]
 }
 
@@ -68,7 +81,11 @@ private struct ParsedResumeBody {
 /// the same way (name, then role, then contact, blank line, then SUMMARY/SKILLS/EXPERIENCE...),
 /// so this parses that shape back out rather than requiring the renderers' call sites to pass
 /// structured fields through separately.
-private func parseResumeBody(_ body: String) -> ParsedResumeBody {
+/// - Parameter extractingEducation: when true the EDUCATION section is lifted out of the body
+///   into `educationLines`. Only the sidebar layouts ask for this — they show education in the
+///   colored column, matching both the on-screen preview and the reference templates. The banner
+///   and flowing layouts have no sidebar to put it in, so it stays inline for them.
+private func parseResumeBody(_ body: String, extractingEducation: Bool = false) -> ParsedResumeBody {
     let lines = body.components(separatedBy: "\n")
     var index = 0
 
@@ -104,6 +121,7 @@ private func parseResumeBody(_ body: String) -> ParsedResumeBody {
     }
 
     var skills: [String] = []
+    var educationLines: [String] = []
     var remaining: [String] = []
     while index < lines.count {
         let line = lines[index]
@@ -121,12 +139,27 @@ private func parseResumeBody(_ body: String) -> ParsedResumeBody {
                 }
                 index += 1
             }
+        } else if extractingEducation, ResumeSectionKit.isSectionHeader(line),
+                  line.trimmingCharacters(in: .whitespaces).uppercased().contains("EDUCATION") {
+            index += 1
+            while index < lines.count, !ResumeSectionKit.isSectionHeader(lines[index]) {
+                let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty { educationLines.append(trimmed) }
+                index += 1
+            }
         } else {
             remaining.append(line)
             index += 1
         }
     }
-    return ParsedResumeBody(name: name, role: role, contactLine: contactLine, skills: skills, remainingLines: remaining)
+    return ParsedResumeBody(
+        name: name,
+        role: role,
+        contactLine: contactLine,
+        skills: skills,
+        educationLines: educationLines,
+        remainingLines: remaining
+    )
 }
 
 /// Renders plain text into a real multi-page PDF using CoreText/CoreGraphics directly, so it
@@ -162,10 +195,15 @@ enum PDFDocumentRenderer {
     /// - Parameter style: the selected `ResumeTemplateStyle` — drives which structural layout is
     ///   used (sidebar / banner / flowing single column), not just the accent color, so the
     ///   export actually resembles the on-screen `ResumeTemplateCard` for that template.
-    static func render(title: String, body: String, style: ResumeTemplateStyle = .modernEdge) -> Data {
+    static func render(
+        title: String,
+        body: String,
+        style: ResumeTemplateStyle = .modernEdge,
+        photoData: Data? = nil
+    ) -> Data {
         switch style.exportLayout {
         case .sidebar:
-            return renderSidebarLayout(body: body, style: style)
+            return renderSidebarLayout(body: body, style: style, photoData: photoData)
         case .banner:
             return renderBannerLayout(body: body, style: style)
         case .flowing:
@@ -242,10 +280,14 @@ enum PDFDocumentRenderer {
 
     // MARK: - Sidebar layout (Modern Edge)
 
-    private static func renderSidebarLayout(body: String, style: ResumeTemplateStyle) -> Data {
+    private static func renderSidebarLayout(body: String, style: ResumeTemplateStyle, photoData: Data? = nil) -> Data {
         let accentColor = CGColor.fromHex(style.accentColorHex)
-        let parsed = parseResumeBody(body)
+        let parsed = parseResumeBody(body, extractingEducation: true)
         let sidebarWidth: CGFloat = 190
+        let photo = photoData.flatMap(ResumePhoto.image(from:))
+        let photoDiameter: CGFloat = 96
+        // Vertical space the photo takes out of the sidebar text column, including the gap below it.
+        let photoReserve: CGFloat = photo == nil ? 0 : photoDiameter + 18
 
         let data = NSMutableData()
         guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return Data() }
@@ -265,6 +307,18 @@ enum PDFDocumentRenderer {
                 attributes: [fontAttributeKey: CTFontCreateWithName("Helvetica" as CFString, 10, nil), colorAttributeKey: whiteColor]
             ))
         }
+        if !parsed.educationLines.isEmpty {
+            sidebarAttributed.append(NSAttributedString(
+                string: "\nEDUCATION\n",
+                attributes: [fontAttributeKey: CTFontCreateWithName("Helvetica-Bold" as CFString, 11, nil), colorAttributeKey: whiteColor]
+            ))
+            for line in parsed.educationLines {
+                sidebarAttributed.append(NSAttributedString(
+                    string: line + "\n",
+                    attributes: [fontAttributeKey: CTFontCreateWithName("Helvetica" as CFString, 10, nil), colorAttributeKey: whiteColor]
+                ))
+            }
+        }
         if !parsed.skills.isEmpty {
             sidebarAttributed.append(NSAttributedString(
                 string: "\nTECHNICAL SKILLS\n",
@@ -278,7 +332,12 @@ enum PDFDocumentRenderer {
             }
         }
         let sidebarFramesetter = CTFramesetterCreateWithAttributedString(sidebarAttributed)
-        let sidebarPath = CGPath(rect: CGRect(x: 0, y: 0, width: sidebarWidth - 40, height: pageRect.height - margin * 2), transform: nil)
+        // Shortening the frame moves its top edge down, which is what pushes CONTACT below the
+        // photo — CoreText fills a frame from the top of its path.
+        let sidebarPath = CGPath(
+            rect: CGRect(x: 0, y: 0, width: sidebarWidth - 40, height: pageRect.height - margin * 2 - photoReserve),
+            transform: nil
+        )
 
         let mainAttributed = NSMutableAttributedString()
         mainAttributed.append(NSAttributedString(
@@ -299,22 +358,42 @@ enum PDFDocumentRenderer {
         var currentIndex = 0
         let totalLength = mainAttributed.length
 
-        // The colored sidebar (with the same Contact/Skills content) repeats on every page —
-        // not just the first — so a resume long enough to overflow doesn't suddenly lose its
-        // template identity on page 2 and beyond.
+        var isFirstPage = true
         repeat {
             context.beginPDFPage(nil)
 
+            // The coloured column is painted on every page, full height, so a resume that runs
+            // onto page two keeps its template identity instead of turning into plain text.
             context.saveGState()
             context.setFillColor(accentColor)
             context.fill(CGRect(x: 0, y: 0, width: sidebarWidth, height: pageRect.height))
             context.restoreGState()
 
-            context.saveGState()
-            context.translateBy(x: 20, y: margin)
-            let sidebarFrame = CTFramesetterCreateFrame(sidebarFramesetter, CFRange(location: 0, length: 0), sidebarPath, nil)
-            CTFrameDraw(sidebarFrame, context)
-            context.restoreGState()
+            // Its *contents* are drawn once. Repeating them printed the whole Contact block and
+            // skills list again on page two, which reads as a duplicate rather than a running
+            // header.
+            if isFirstPage {
+                if let photo {
+                    context.saveGState()
+                    let photoRect = CGRect(
+                        x: (sidebarWidth - photoDiameter) / 2,
+                        y: pageRect.height - margin - photoDiameter,
+                        width: photoDiameter,
+                        height: photoDiameter
+                    )
+                    context.addEllipse(in: photoRect)
+                    context.clip()
+                    context.draw(photo, in: photoRect)
+                    context.restoreGState()
+                }
+
+                context.saveGState()
+                context.translateBy(x: 20, y: margin)
+                let sidebarFrame = CTFramesetterCreateFrame(sidebarFramesetter, CFRange(location: 0, length: 0), sidebarPath, nil)
+                CTFrameDraw(sidebarFrame, context)
+                context.restoreGState()
+            }
+            isFirstPage = false
 
             context.saveGState()
             context.translateBy(x: mainX, y: margin)
@@ -364,6 +443,14 @@ enum PDFDocumentRenderer {
         let bannerFramesetter = CTFramesetterCreateWithAttributedString(bannerAttributed)
         let bannerPath = CGPath(rect: CGRect(x: 0, y: 0, width: pageRect.width - margin * 2, height: bannerHeight), transform: nil)
 
+        // Pages after the first get the name alone, so the band still reads as a running header
+        // instead of reprinting the whole contact block.
+        let continuationBanner = NSAttributedString(
+            string: parsed.name + "\n",
+            attributes: [fontAttributeKey: CTFontCreateWithName("Helvetica-Bold" as CFString, 22, nil), colorAttributeKey: whiteColor]
+        )
+        let continuationFramesetter = CTFramesetterCreateWithAttributedString(continuationBanner)
+
         let mainAttributed = NSMutableAttributedString()
         if !parsed.skills.isEmpty {
             mainAttributed.append(NSAttributedString(
@@ -378,9 +465,9 @@ enum PDFDocumentRenderer {
         var currentIndex = 0
         let totalLength = mainAttributed.length
 
-        // The colored banner (with the same name/role/contact content) repeats on every page —
-        // not just the first — so a resume long enough to overflow doesn't suddenly lose its
-        // template identity on page 2 and beyond, matching the sidebar layout's behavior.
+        var isFirstPage = true
+        // The colored banner is painted on every page so a resume long enough to overflow doesn't
+        // lose its template identity on page 2 — but only page 1 carries the contact details.
         repeat {
             context.beginPDFPage(nil)
 
@@ -391,9 +478,13 @@ enum PDFDocumentRenderer {
 
             context.saveGState()
             context.translateBy(x: margin, y: pageRect.height - bannerHeight)
-            let bannerFrame = CTFramesetterCreateFrame(bannerFramesetter, CFRange(location: 0, length: 0), bannerPath, nil)
+            let bannerFrame = CTFramesetterCreateFrame(
+                isFirstPage ? bannerFramesetter : continuationFramesetter,
+                CFRange(location: 0, length: 0), bannerPath, nil
+            )
             CTFrameDraw(bannerFrame, context)
             context.restoreGState()
+            isFirstPage = false
 
             context.saveGState()
             context.translateBy(x: margin, y: margin)
@@ -519,22 +610,33 @@ enum WordDocumentRenderer {
     ///   used (a shaded sidebar table, a shaded banner table, or a single flowing column), not
     ///   just the accent color, mirroring `ResumeTemplateCard`'s on-screen layout instead of
     ///   producing the same flat document for every template.
-    static func render(title: String, body: String, style: ResumeTemplateStyle = .modernEdge) -> Data {
+    static func render(
+        title: String,
+        body: String,
+        style: ResumeTemplateStyle = .modernEdge,
+        photoData: Data? = nil
+    ) -> Data {
+        // Only the sidebar layout has a place for a headshot, matching the on-screen card.
+        let photo = style.exportLayout == .sidebar ? photoData : nil
+
         let documentXML: String
         switch style.exportLayout {
         case .sidebar:
-            documentXML = sidebarDocumentXML(title: title, body: body, style: style)
+            documentXML = sidebarDocumentXML(title: title, body: body, style: style, hasPhoto: photo != nil)
         case .banner:
             documentXML = bannerDocumentXML(title: title, body: body, style: style)
         case .flowing:
             documentXML = flowingDocumentXML(title: title, body: body, style: style)
         }
 
+        // The jpeg default and the document-level relationship part only exist when a photo does;
+        // Word rejects a package that declares parts it can't find.
+        let jpegDefault = photo == nil ? "" : "\n<Default Extension=\"jpeg\" ContentType=\"image/jpeg\"/>"
         let contentTypesXML = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
         <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-        <Default Extension="xml" ContentType="application/xml"/>
+        <Default Extension="xml" ContentType="application/xml"/>\(jpegDefault)
         <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
         </Types>
         """
@@ -546,12 +648,50 @@ enum WordDocumentRenderer {
         </Relationships>
         """
 
-        let entries: [(name: String, data: Data)] = [
+        var entries: [(name: String, data: Data)] = [
             ("[Content_Types].xml", Data(contentTypesXML.utf8)),
             ("_rels/.rels", Data(rootRelsXML.utf8)),
             ("word/document.xml", Data(documentXML.utf8))
         ]
+
+        if let photo {
+            let documentRelsXML = """
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+            <Relationship Id="\(photoRelationshipID)" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/photo.jpeg"/>
+            </Relationships>
+            """
+            entries.append(("word/_rels/document.xml.rels", Data(documentRelsXML.utf8)))
+            entries.append(("word/media/photo.jpeg", photo))
+        }
+
         return MinimalZipWriter.makeArchive(entries: entries)
+    }
+
+    private static let photoRelationshipID = "rIdPhoto"
+
+    /// A centred, inline, circular picture.
+    ///
+    /// `prstGeom prst="ellipse"` is what makes it round — Word crops the picture to the preset
+    /// shape rather than drawing a square with rounded corners. `ResumePhoto.prepare` has
+    /// already centre-cropped the source to a square, so the ellipse is a true circle and the
+    /// face isn't squashed. Sizes are EMUs: 914400 per inch.
+    private static func photoParagraph() -> String {
+        let edge = 914400
+        return """
+        <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:drawing>\
+        <wp:inline distT="0" distB="0" distL="0" distR="0">\
+        <wp:extent cx="\(edge)" cy="\(edge)"/><wp:effectExtent l="0" t="0" r="0" b="0"/>\
+        <wp:docPr id="1" name="Headshot"/>\
+        <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">\
+        <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">\
+        <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">\
+        <pic:nvPicPr><pic:cNvPr id="1" name="Headshot"/><pic:cNvPicPr/></pic:nvPicPr>\
+        <pic:blipFill><a:blip r:embed="\(photoRelationshipID)"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>\
+        <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="\(edge)" cy="\(edge)"/></a:xfrm>\
+        <a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom></pic:spPr>\
+        </pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>
+        """
     }
 
     // MARK: - Flowing layout (Minimal Pro, Executive Suite)
@@ -608,11 +748,12 @@ enum WordDocumentRenderer {
 
     // MARK: - Sidebar layout (Modern Edge) — a borderless 2-column table
 
-    private static func sidebarDocumentXML(title: String, body: String, style: ResumeTemplateStyle) -> String {
-        let parsed = parseResumeBody(body)
+    private static func sidebarDocumentXML(title: String, body: String, style: ResumeTemplateStyle, hasPhoto: Bool = false) -> String {
+        let parsed = parseResumeBody(body, extractingEducation: true)
         let font = "Calibri"
 
-        var sidebarContent = paragraph("CONTACT", font: font, sizeHalfPoints: 20, bold: true, color: "FFFFFF")
+        var sidebarContent = hasPhoto ? photoParagraph() : ""
+        sidebarContent += paragraph("CONTACT", font: font, sizeHalfPoints: 20, bold: true, color: "FFFFFF")
         for part in parsed.contactLine.components(separatedBy: "|") {
             let trimmed = part.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
@@ -620,6 +761,13 @@ enum WordDocumentRenderer {
                 "\(ContactGlyph.forContactValue(trimmed))  \(trimmed)",
                 font: font, sizeHalfPoints: 18, color: "FFFFFF"
             )
+        }
+        if !parsed.educationLines.isEmpty {
+            sidebarContent += paragraph("", font: font, sizeHalfPoints: 18, color: "FFFFFF")
+            sidebarContent += paragraph("EDUCATION", font: font, sizeHalfPoints: 20, bold: true, color: "FFFFFF")
+            for line in parsed.educationLines {
+                sidebarContent += paragraph(line, font: font, sizeHalfPoints: 18, color: "FFFFFF")
+            }
         }
         if !parsed.skills.isEmpty {
             sidebarContent += paragraph("", font: font, sizeHalfPoints: 18, color: "FFFFFF")
@@ -638,15 +786,26 @@ enum WordDocumentRenderer {
 
         // A single-row, two-column table with no borders and a shaded left cell is the standard
         // OOXML way to get a colored "sidebar" column — Word grows both cells to match whichever
-        // is taller, so the shading naturally spans the full content height.
+        // is taller, so the shading spans the full content height.
+        //
+        // `w:trHeight`/`hRule="atLeast"` additionally forces the row down to the full text height
+        // of the page (Letter's 15840 twips less two 1" margins, minus room for the empty
+        // paragraph Word requires after a table). Without it a short resume stopped the shading
+        // partway down and left the colored column hanging in white space; the row still grows
+        // past this floor and flows onto a second page when the content is longer.
+        // `r` and `wp` are declared here rather than on the drawing itself because `r:embed`
+        // is an attribute — an attribute can't carry its own namespace declaration.
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" \
+        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" \
+        xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
         <w:body>
         <w:tbl>
         <w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/><w:insideH w:val="none"/><w:insideV w:val="none"/></w:tblBorders></w:tblPr>
         <w:tblGrid><w:gridCol w:w="2800"/><w:gridCol w:w="6560"/></w:tblGrid>
         <w:tr>
+        <w:trPr><w:trHeight w:val="12600" w:hRule="atLeast"/></w:trPr>
         <w:tc><w:tcPr><w:tcW w:w="2800" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="\(style.accentColorHex)"/><w:tcMar><w:top w:w="200" w:type="dxa"/><w:left w:w="200" w:type="dxa"/><w:bottom w:w="200" w:type="dxa"/><w:right w:w="200" w:type="dxa"/></w:tcMar></w:tcPr>\(sidebarContent)</w:tc>
         <w:tc><w:tcPr><w:tcW w:w="6560" w:type="dxa"/><w:tcMar><w:top w:w="200" w:type="dxa"/><w:left w:w="200" w:type="dxa"/><w:bottom w:w="200" w:type="dxa"/><w:right w:w="200" w:type="dxa"/></w:tcMar></w:tcPr>\(mainContent)</w:tc>
         </w:tr>

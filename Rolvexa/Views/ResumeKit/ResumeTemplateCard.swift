@@ -14,11 +14,87 @@ struct ResumeTemplateCard: View {
     /// Profile/portfolio URLs (LinkedIn, GitHub, …), shown with the rest of the contact details.
     var links: [String] = []
     var education: String? = nil
+    /// Structured jobs, each with its own title, dates, employer and bullets. The upload flow
+    /// has no such structure and leaves this empty, falling back to `role`/`yearsOfExperience`
+    /// plus the flat `experienceBullets` list.
+    var positions: [WorkExperienceEntry] = []
+    /// Optional headshot, prepared by `ResumePhoto`. Only the sidebar layout has a place for it.
+    var photoData: Data?
     var style: ResumeTemplateStyle = .modernEdge
 
     /// The contact values the flowing and banner layouts print as a single run.
     private var contactParts: [String] {
         ([email, phone, location].compactMap { $0 } + links).filter { !$0.isEmpty }
+    }
+
+    /// The headshot, or the placeholder silhouette when none was chosen.
+    @ViewBuilder
+    private var avatar: some View {
+        if let photoData, let image = ResumePhoto.image(from: photoData) {
+            Image(decorative: image, scale: 1)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 60, height: 60)
+                .clipShape(Circle())
+        } else {
+            Circle()
+                .fill(.white.opacity(0.25))
+                .frame(width: 60, height: 60)
+                .overlay {
+                    Image(systemName: "person.fill")
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                }
+        }
+    }
+
+    /// The PROFESSIONAL EXPERIENCE body, shared by all four layouts so the structured and
+    /// fallback shapes can't drift apart between templates.
+    @ViewBuilder
+    private func experienceBody(bulletColor: Color, design: Font.Design = .default) -> some View {
+        if positions.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if !role.isEmpty {
+                        Text(role).font(.system(size: 14, weight: .semibold, design: design))
+                    }
+                    if !yearsOfExperience.isEmpty {
+                        Text(yearsOfExperience)
+                            .font(.system(size: 12.5, design: design))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                bulletList(experienceBullets, color: bulletColor, design: design)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(positions) { position in
+                    VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(position.headingLine)
+                                .font(.system(size: 14, weight: .semibold, design: design))
+                            if !position.employerLine.isEmpty {
+                                Text(position.employerLine)
+                                    .font(.system(size: 12.5, design: design))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        bulletList(position.filledBullets, color: bulletColor, design: design)
+                    }
+                }
+            }
+        }
+    }
+
+    private func bulletList(_ bullets: [String], color: Color, design: Font.Design) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(bullets, id: \.self) { bullet in
+                HStack(alignment: .top, spacing: 6) {
+                    Circle().fill(color).frame(width: 3, height: 3).padding(.top, 5)
+                    Text(bullet).font(.system(size: 13.5, design: design)).lineSpacing(2)
+                }
+            }
+        }
     }
 
     var body: some View {
@@ -54,14 +130,7 @@ struct ResumeTemplateCard: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Circle()
-                .fill(.white.opacity(0.25))
-                .frame(width: 60, height: 60)
-                .overlay {
-                    Image(systemName: "person.fill")
-                        .font(.title3)
-                        .foregroundStyle(.white)
-                }
+            avatar
                 .frame(maxWidth: .infinity, alignment: .center)
 
             sidebarSection(title: "CONTACT") {
@@ -95,7 +164,9 @@ struct ResumeTemplateCard: View {
                         .foregroundStyle(.white)
                 } else {
                     VStack(alignment: .leading, spacing: 7) {
-                        ForEach(skills.prefix(6), id: \.self) { skill in
+                        // No cap: the PDF and Word sidebars list every skill, so truncating here
+                        // made the on-screen preview disagree with the file the user downloads.
+                        ForEach(skills, id: \.self) { skill in
                             HStack(alignment: .top, spacing: 6) {
                                 Circle()
                                     .fill(.white.opacity(0.8))
@@ -153,7 +224,7 @@ struct ResumeTemplateCard: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
-                Text(contactParts.joined(separator: "  •  "))
+                Text(contactParts.joined(separator: "   |   "))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -178,20 +249,7 @@ struct ResumeTemplateCard: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     sectionHeader("PROFESSIONAL EXPERIENCE", color: .black)
-                    VStack(alignment: .leading, spacing: 2) {
-                        if !role.isEmpty { Text(role).font(.system(size: 14, weight: .semibold)) }
-                        if !yearsOfExperience.isEmpty {
-                            Text(yearsOfExperience).font(.system(size: 12.5)).foregroundStyle(.secondary)
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 5) {
-                        ForEach(experienceBullets, id: \.self) { bullet in
-                            HStack(alignment: .top, spacing: 6) {
-                                Circle().fill(Color.secondary).frame(width: 3, height: 3).padding(.top, 5)
-                                Text(bullet).font(.system(size: 13.5)).lineSpacing(2)
-                            }
-                        }
-                    }
+                    experienceBody(bulletColor: .secondary)
                 }
                 if !skills.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -225,7 +283,7 @@ struct ResumeTemplateCard: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.9))
                 }
-                Text(contactParts.joined(separator: "  •  "))
+                Text(contactParts.joined(separator: "   |   "))
                     .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.85))
             }
@@ -267,19 +325,12 @@ struct ResumeTemplateCard: View {
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         sectionHeader("PROFESSIONAL EXPERIENCE", color: .purple)
-                        VStack(alignment: .leading, spacing: 2) {
-                            if !role.isEmpty { Text(role).font(.system(size: 14, weight: .semibold)) }
-                            if !yearsOfExperience.isEmpty {
-                                Text(yearsOfExperience).font(.system(size: 12.5)).foregroundStyle(.secondary)
-                            }
-                        }
-                        VStack(alignment: .leading, spacing: 5) {
-                            ForEach(experienceBullets, id: \.self) { bullet in
-                                HStack(alignment: .top, spacing: 6) {
-                                    Circle().fill(Color.purple).frame(width: 3, height: 3).padding(.top, 5)
-                                    Text(bullet).font(.system(size: 13.5)).lineSpacing(2)
-                                }
-                            }
+                        experienceBody(bulletColor: .purple)
+                    }
+                    if let education, !education.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            sectionHeader("EDUCATION", color: .purple)
+                            Text(education).font(.system(size: 13.5)).foregroundStyle(.primary)
                         }
                     }
                 }
@@ -326,25 +377,18 @@ struct ResumeTemplateCard: View {
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         sectionHeader("PROFESSIONAL EXPERIENCE", color: accent, serif: true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            if !role.isEmpty { Text(role).font(.system(size: 14, weight: .semibold, design: .serif)) }
-                            if !yearsOfExperience.isEmpty {
-                                Text(yearsOfExperience).font(.system(size: 12.5, design: .serif)).foregroundStyle(.secondary)
-                            }
-                        }
-                        VStack(alignment: .leading, spacing: 5) {
-                            ForEach(experienceBullets, id: \.self) { bullet in
-                                HStack(alignment: .top, spacing: 6) {
-                                    Circle().fill(accent).frame(width: 3, height: 3).padding(.top, 5)
-                                    Text(bullet).font(.system(size: 13.5, design: .serif)).lineSpacing(2)
-                                }
-                            }
-                        }
+                        experienceBody(bulletColor: accent, design: .serif)
                     }
                     if !skills.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             sectionHeader("SKILLS", color: accent, serif: true)
                             Text(skills.joined(separator: ", ")).font(.system(size: 13.5, design: .serif)).foregroundStyle(.primary)
+                        }
+                    }
+                    if let education, !education.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            sectionHeader("EDUCATION", color: accent, serif: true)
+                            Text(education).font(.system(size: 13.5, design: .serif)).foregroundStyle(.primary)
                         }
                     }
                 }
@@ -431,31 +475,7 @@ struct ResumeTemplateCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     sectionHeader("PROFESSIONAL EXPERIENCE", color: accent)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        if !role.isEmpty {
-                            Text(role)
-                                .font(.system(size: 14, weight: .semibold))
-                        }
-                        if !yearsOfExperience.isEmpty {
-                            Text(yearsOfExperience)
-                                .font(.system(size: 12.5))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        ForEach(experienceBullets, id: \.self) { bullet in
-                            HStack(alignment: .top, spacing: 6) {
-                                Circle()
-                                    .fill(Color.secondary)
-                                    .frame(width: 3, height: 3)
-                                    .padding(.top, 5)
-                                Text(bullet)
-                                    .font(.system(size: 13.5))
-                                    .lineSpacing(2)
-                            }
-                        }
-                    }
+                    experienceBody(bulletColor: .secondary)
                 }
             }
 
@@ -467,7 +487,11 @@ struct ResumeTemplateCard: View {
     }
 }
 
+// Wrapped in a ScrollView to match `ResumeKitView`, which is where this card actually lives.
+// Rendered bare, the preview hands the card a fixed screen height and a resume with more than
+// one job gets truncated with ellipses that never appear in the app.
 #Preview {
+    ScrollView {
     ResumeTemplateCard(
         name: "Jamie Chen",
         role: "Senior Product Designer",
@@ -478,9 +502,36 @@ struct ResumeTemplateCard: View {
         email: "jamie@example.com",
         phone: "555-0100",
         location: "San Francisco, CA",
-        links: ["www.linkedin.com/in/jamiechen", "github.com/jamiechen"]
+        links: ["www.linkedin.com/in/jamiechen", "github.com/jamiechen"],
+        education: "BA Interaction Design\nCalifornia College of the Arts, San Francisco, CA\nMay 2017",
+        positions: [
+            {
+                var entry = WorkExperienceEntry()
+                entry.title = "Senior Product Designer"
+                entry.company = "Northwind Labs"
+                entry.location = "San Francisco, CA"
+                entry.startDate = "Mar 2021"
+                entry.isCurrent = true
+                entry.bullets = [
+                    "Led design for a resume-building app used by 40k people",
+                    "Improved onboarding conversion by 20%"
+                ]
+                return entry
+            }(),
+            {
+                var entry = WorkExperienceEntry()
+                entry.title = "Product Designer"
+                entry.company = "Gridline"
+                entry.location = "Oakland, CA"
+                entry.startDate = "Jun 2017"
+                entry.endDate = "Feb 2021"
+                entry.bullets = ["Shipped a design system adopted by four product teams"]
+                return entry
+            }()
+        ]
     )
     .padding(20)
+    }
 }
 
 #Preview("Minimal Pro") {

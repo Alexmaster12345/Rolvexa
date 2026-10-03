@@ -31,6 +31,9 @@ struct DownloadMenuButton: View {
     /// resembles whichever template was picked (font, name emphasis, alignment, accent color)
     /// instead of every template producing an identical document.
     var style: ResumeTemplateStyle = .modernEdge
+    /// Optional headshot bytes, embedded by the sidebar layouts. Nil for documents that have no
+    /// place for one (cover letter, job fit) or when the user didn't pick a photo.
+    var photoData: Data?
 
     @State private var isExporting = false
     @State private var exportFilename = "Export.pdf"
@@ -73,8 +76,8 @@ struct DownloadMenuButton: View {
         } else {
             let text = textProvider()
             exportData = format == .pdf
-                ? PDFDocumentRenderer.render(title: documentTitle, body: text, style: style)
-                : WordDocumentRenderer.render(title: documentTitle, body: text, style: style)
+                ? PDFDocumentRenderer.render(title: documentTitle, body: text, style: style, photoData: photoData)
+                : WordDocumentRenderer.render(title: documentTitle, body: text, style: style, photoData: photoData)
         }
         exportFilename = "\(baseFilename).\(format.fileExtension)"
         exportContentType = format.contentType

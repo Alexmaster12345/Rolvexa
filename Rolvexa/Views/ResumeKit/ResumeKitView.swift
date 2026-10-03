@@ -113,7 +113,9 @@ struct ResumeKitView: View {
             originalFileData: originalData,
             originalFileExtension: originalExtension,
             fixedFormat: fixedFormat,
-            style: appState.selectedResumeTemplateStyle
+            style: appState.selectedResumeTemplateStyle,
+            // A cover letter has no sidebar to hold a headshot, so only the resume gets one.
+            photoData: isResumeTab ? appState.experience.photoData : nil
         )
         .buttonStyle(.bordered)
         .tint(.indigo)
@@ -176,6 +178,25 @@ struct ResumeKitView: View {
 
     private var displaySkills: String {
         appState.experience.skills.isEmpty ? "product design, user research, and prototyping" : appState.experience.skills.joined(separator: ", ")
+    }
+
+    /// Mirrors `coverLetterExportText()` so the on-screen cover letter and the downloaded one
+    /// read identically.
+    private var coverLetterHighlightSentence: String {
+        let highlights = appState.experience.coverLetterHighlights
+        return highlights.isEmpty
+            ? "My background has prepared me to take on new challenges."
+            : "Recent highlights: \(highlights)."
+    }
+
+    /// Same precedence the export uses — what the user wrote, else the AI pass, else the
+    /// generated sentence — so the preview and the downloaded file can't show different
+    /// "About me" text.
+    private var displaySummary: String {
+        let written = appState.experience.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !written.isEmpty { return written }
+        if let generated = appState.aiGeneratedSummary { return generated }
+        return "\(displayRole) with \(appState.experience.yearsOfExperience) of experience, skilled in \(displaySkills). Seeking to bring this expertise to \(displayRoleAtCompany)."
     }
 
     private func cleanedExtractedText(_ raw: String) -> String {
@@ -244,14 +265,17 @@ struct ResumeKitView: View {
             ResumeTemplateCard(
                 name: displayName,
                 role: displayRole,
-                summary: appState.aiGeneratedSummary ?? "\(displayRole) with \(appState.experience.yearsOfExperience) of experience, skilled in \(displaySkills). Seeking to bring this expertise to \(displayRoleAtCompany).",
+                summary: displaySummary,
                 skills: appState.experience.skills.isEmpty ? ["Product Design", "Figma", "User Research"] : appState.experience.skills,
                 yearsOfExperience: appState.experience.yearsOfExperience,
                 experienceBullets: experienceBullets,
                 email: appState.experience.email.isEmpty ? nil : appState.experience.email,
                 phone: appState.experience.phone.isEmpty ? nil : appState.experience.phone,
                 location: appState.experience.location.isEmpty ? nil : appState.experience.location,
-                education: appState.experience.education.isEmpty ? nil : appState.experience.education,
+                links: appState.experience.links,
+                education: appState.experience.educationSummary.isEmpty ? nil : appState.experience.educationSummary,
+                positions: appState.experience.completedPositions,
+                photoData: appState.experience.photoData,
                 style: appState.selectedResumeTemplateStyle
             )
         }
@@ -291,13 +315,11 @@ struct ResumeKitView: View {
         .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
     }
 
+    /// Only used as the fallback when there are no structured positions yet — with entries
+    /// filled in, the card renders each job from `positions` instead.
     private var experienceBullets: [String] {
-        let summary = appState.experience.workHistorySummary
-        let lines = summary
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        if !lines.isEmpty { return lines }
+        let bullets = appState.experience.positions.flatMap(\.filledBullets)
+        if !bullets.isEmpty { return bullets }
         return ["Add your work history to see it tailored here."]
     }
 
@@ -311,7 +333,7 @@ struct ResumeKitView: View {
                 Text("I'm excited to apply for \(displayRoleAtCompany). As a \(displayRole) with \(appState.experience.yearsOfExperience) of experience in \(displaySkills), I'm confident I can make an immediate impact on your team.")
                     .font(.footnote)
 
-                Text("\(appState.experience.workHistorySummary.isEmpty ? "My background has prepared me to take on new challenges" : appState.experience.workHistorySummary) and I'd welcome the chance to discuss how I can contribute to \(displayCompany)'s continued success.")
+                Text("\(coverLetterHighlightSentence) I'd welcome the chance to discuss how I can contribute to \(displayCompany)'s continued success.")
                     .font(.footnote)
             }
 

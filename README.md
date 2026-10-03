@@ -9,7 +9,7 @@
 Rolvexa supports two ways to start:
 
 - **Upload an existing resume** (PDF, Word, or a photo/screenshot) — get an instant score, a breakdown (ATS compatibility, content & impact, grammar & clarity, formatting), and concrete suggestions for improving it. Photos are read with on-device OCR, so a picture of a printed resume becomes fully editable, fixable, and exportable as a real PDF or Word document.
-- **Write a resume from scratch** — fill in your contact info, education, and professional experience, and Rolvexa assembles a structured resume from it.
+- **Write a resume from scratch** — enter your contact details and profile links, the job you're targeting, each role you've held (title, employer, location, dates, achievement bullets), and your education. Write your own summary or let Rolvexa generate one. Add an optional headshot and it's rendered as a circular photo in the sidebar template.
 
 From there, Rolvexa:
 
@@ -18,7 +18,9 @@ From there, Rolvexa:
 - **"Fix It For Me"** — applies safe, deterministic fixes automatically, and on Apple Intelligence devices also rewrites bullet points and paragraphs for punchier phrasing (never inventing facts, numbers, or achievements that aren't already there).
 - Suggests other job titles you're a good fit for, based on your skills.
 - Generates a tailored cover letter and a job-fit analysis alongside your resume.
-- Exports everything as PDF or Word, ready to send.
+- Exports everything as PDF or Word, ready to send — matching the on-screen preview section for section, including the contact icons, the photo, and a coloured sidebar that runs the full height of every page.
+
+Where a field is missing, Rolvexa leaves the section out rather than filling it with sample text. A resume that's visibly incomplete is recoverable; one that's confidently wrong about who you are is not.
 
 ## How it works, technically
 
@@ -27,6 +29,7 @@ Everything runs locally on the device — no cloud AI, no API keys, no network c
 - **Text extraction** from uploaded files: `PDFKit` for text-based PDFs, a minimal in-house zip reader for DOCX, and `Vision` OCR for photos, screenshots, and scanned image-only PDFs. Photos are normalized upright first (a camera photo stores its rotation in an EXIF tag, and Vision reports text positions in the *stored* pixel space — without normalizing, a sideways photo's sections come out in reverse order).
 - **Scoring and suggestions** via `NaturalLanguage` tokenization, the system spell checker (`UITextChecker`), and deterministic heuristics.
 - **"Fix It For Me"** layers Apple Intelligence's on-device system model — via the [Foundation Models](https://developer.apple.com/documentation/foundationmodels) framework, using `@Generable` guided generation so the response is a guaranteed-shape Swift type rather than parsed free text — on top of the deterministic fixes.
+- **Export generation** is written from first principles. PDFs are drawn with CoreText/CoreGraphics (US Letter, multi-page, circular photo via an ellipse clip). `.docx` files are hand-written OOXML packed into a hand-rolled ZIP container, with the headshot embedded as a JPEG part and cropped to a circle by a DrawingML `ellipse` preset. Headshots are normalized through all eight EXIF orientations and centre-cropped square before either renderer sees them.
 - Built with **SwiftUI**. No third-party package dependencies.
 
 ### Graceful degradation
