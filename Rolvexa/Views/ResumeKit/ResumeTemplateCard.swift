@@ -502,7 +502,10 @@ struct ResumeTemplateCard: View {
         email: "jamie@example.com",
         phone: "555-0100",
         location: "San Francisco, CA",
-        links: ["www.linkedin.com/in/jamiechen", "github.com/jamiechen"],
+        // Obvious placeholders rather than plausible handles: this preview is the source of a
+        // screenshot in the README, and "linkedin.com/in/jamiechen" is likely a real person's
+        // profile to put on a stranger's project page.
+        links: ["www.linkedin.com/in/your-name", "github.com/your-name"],
         education: "BA Interaction Design\nCalifornia College of the Arts, San Francisco, CA\nMay 2017",
         positions: [
             {

@@ -279,7 +279,7 @@ struct InputExperienceView: View {
 
             LabeledField(title: "Links (optional)") {
                 VStack(spacing: 10) {
-                    TextField("LinkedIn (e.g. linkedin.com/in/jamiechen)", text: $appState.experience.linkedIn)
+                    TextField("LinkedIn (e.g. linkedin.com/in/your-name)", text: $appState.experience.linkedIn)
                         .textFieldStyle(.roundedInput)
                         #if os(iOS)
                         .keyboardType(.URL)
